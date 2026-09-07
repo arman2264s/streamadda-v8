@@ -1,0 +1,1560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>StreamAdda v8</title>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:oklch(0.13 0.02 260);
+  --surface:oklch(0.17 0.025 260);
+  --surface2:oklch(0.21 0.03 260);
+  --border:oklch(0.28 0.03 260);
+  --text:oklch(0.92 0.01 260);
+  --muted:oklch(0.6 0.02 260);
+  --primary:oklch(0.62 0.22 260);
+  --primary-dim:oklch(0.55 0.18 260);
+  --danger:oklch(0.62 0.22 25);
+  --danger-dim:oklch(0.52 0.18 25);
+  --ok:oklch(0.68 0.18 145);
+  --sky:oklch(0.68 0.16 210);
+  --warn:oklch(0.8 0.18 90);
+  --e-out:cubic-bezier(.22,1,.36,1);
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:14px;line-height:1.5}
+a{color:var(--primary)}
+input,select,textarea{background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:.45rem .7rem;width:100%;outline:none;transition:border-color .15s}
+input:focus,select:focus,textarea:focus{border-color:var(--primary)}
+input[type=checkbox]{width:auto;accent-color:var(--primary)}
+label{font-size:12px;color:var(--muted);font-weight:500;display:block;margin-bottom:4px}
+.btn{display:inline-flex;align-items:center;gap:.4rem;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;padding:.5rem 1rem;transition:opacity .15s,background .15s;white-space:nowrap}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-primary:hover:not(:disabled){background:var(--primary-dim)}
+.btn-danger{background:var(--danger);color:#fff}
+.btn-danger:hover:not(:disabled){background:var(--danger-dim)}
+.btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border)}
+.btn-ghost:hover:not(:disabled){color:var(--text);border-color:var(--text)}
+.btn-sky{background:oklch(0.62 0.16 210);color:#fff}
+.btn-sky:hover:not(:disabled){background:oklch(0.55 0.14 210)}
+.btn-sm{font-size:11px;padding:.3rem .6rem}
+.btn-icon{padding:.4rem .5rem}
+.grow{flex:1}
+iconbtn{background:transparent;border:none;color:var(--muted);cursor:pointer;padding:.3rem;border-radius:6px;display:inline-flex}
+.iconbtn:hover{color:var(--danger)}
+
+/* Nav */
+nav{display:flex;align-items:center;justify-content:space-between;padding:.75rem 1.25rem;border-bottom:1px solid var(--border);background:var(--surface)}
+.nav-brand{display:flex;align-items:center;gap:.5rem;font-weight:700;font-size:1.05rem;letter-spacing:-.01em}
+.nav-brand svg{color:var(--primary)}
+.nav-right{display:flex;align-items:center;gap:.5rem}
+#livepill{display:none;align-items:center;gap:.4rem;background:oklch(0.62 0.22 25 / .15);border:1px solid oklch(0.62 0.22 25 / .4);border-radius:999px;padding:.2rem .7rem;font-size:12px;font-weight:700;color:oklch(0.8 0.18 25)}
+#livepill .d{width:7px;height:7px;border-radius:50%;background:oklch(0.62 0.22 25);animation:pulse 1.4s infinite}
+
+/* Layout */
+.shell{max-width:1100px;margin:0 auto;padding:1.2rem 1rem}
+.top-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.1rem}
+.top-bar h1{font-size:1.1rem;font-weight:700}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1rem}
+
+/* Cards */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;transition:border-color .2s}
+.card.is-live{border-color:oklch(0.62 0.22 25 / .5)}
+.card-body{padding:1rem}
+.card-top{display:flex;align-items:flex-start;gap:.6rem;margin-bottom:.7rem}
+.card-title{font-weight:700;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card-meta{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.3rem}
+.card-meta span{display:inline-flex;align-items:center;gap:.25rem;font-size:11px;color:var(--muted)}
+.card-meta svg{width:11px;height:11px}
+.divider{border:none;border-top:1px solid var(--border);margin:.7rem 0}
+
+/* Badge */
+.badge{display:inline-flex;align-items:center;gap:.3rem;border-radius:999px;font-size:11px;font-weight:700;padding:.2rem .65rem;letter-spacing:.03em}
+.badge .d{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.b-online{background:oklch(0.62 0.22 25 / .15);color:oklch(0.8 0.18 25);border:1px solid oklch(0.62 0.22 25 / .5)}
+.b-online .d{background:oklch(0.62 0.22 25);animation:pulse 1.4s infinite}
+.b-photo{background:oklch(0.62 0.2 290 / .15);color:oklch(0.78 0.16 290);border:1px solid oklch(0.62 0.2 290 / .4)}
+.b-photo .d{background:oklch(0.62 0.2 290);animation:pulse 1.4s infinite}
+.b-video{background:oklch(0.62 0.2 200 / .15);color:oklch(0.78 0.16 200);border:1px solid oklch(0.62 0.2 200 / .4)}
+.b-video .d{background:oklch(0.62 0.2 200);animation:pulse 1.4s infinite}
+.b-starting{background:oklch(0.7 0.15 60 / .15);color:oklch(0.85 0.12 60);border:1px solid oklch(0.7 0.15 60 / .4)}
+.b-starting .d{background:oklch(0.7 0.15 60);animation:pulse 1.4s infinite}
+.b-scheduled{background:oklch(0.62 0.16 210 / .15);color:oklch(0.78 0.14 210);border:1px solid oklch(0.62 0.16 210 / .4)}
+.b-scheduled .d{background:oklch(0.62 0.16 210)}
+.b-offline{background:oklch(0.3 0.02 260 / .5);color:var(--muted);border:1px solid var(--border)}
+.b-offline .d{background:var(--muted)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* Phase bar */
+.phase{margin-bottom:.7rem}
+.phase-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:.3rem;font-size:12px}
+.phase-lbl{display:flex;align-items:center;gap:.3rem;color:var(--muted)}
+.phase-lbl svg{width:12px;height:12px}
+.phase-rem{color:var(--muted);font-variant-numeric:tabular-nums}
+.track{height:4px;background:var(--surface2);border-radius:2px;overflow:hidden}
+.fill{height:100%;border-radius:2px;transition:width .8s linear}
+.fill.photo{background:oklch(0.62 0.2 290)}
+.fill.video{background:oklch(0.62 0.2 200)}
+
+/* Stats */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin-bottom:.85rem}
+.stat{background:var(--surface2);border-radius:8px;padding:.5rem .6rem}
+.stat.hot .stat-k svg{color:oklch(0.62 0.22 25)}
+.stat-k{display:flex;align-items:center;gap:.25rem;font-size:11px;color:var(--muted);margin-bottom:.2rem}
+.stat-k svg{width:11px;height:11px}
+.stat-v{font-size:1.05rem;font-weight:700;font-variant-numeric:tabular-nums}
+.finish{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:.3rem;margin-bottom:.7rem}
+.finish svg{width:12px;height:12px;flex-shrink:0}
+
+/* Actions */
+.actions{display:flex;gap:.4rem;flex-wrap:wrap}
+
+/* Log window */
+.logwrap{margin-top:.8rem;border-top:1px solid var(--border);padding-top:.7rem}
+.logwrap-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem;font-size:12px;color:var(--muted)}
+.log{background:oklch(0.1 0.015 260);border-radius:8px;padding:.6rem .75rem;font-family:'JetBrains Mono','Fira Mono','Cascadia Code',monospace;font-size:11px;line-height:1.6;max-height:220px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+
+/* Dialog / Modal */
+dialog{background:var(--surface);border:1px solid var(--border);border-radius:14px;color:var(--text);padding:0;width:min(520px,96vw);box-shadow:0 20px 60px #0008;max-height:90vh;overflow-y:auto}
+dialog::backdrop{background:#0008;backdrop-filter:blur(3px)}
+.dlg-head{display:flex;align-items:center;justify-content:space-between;padding:1rem 1.2rem .8rem;border-bottom:1px solid var(--border)}
+.dlg-head h2{font-size:1rem;font-weight:700}
+.dlg-body{padding:1rem 1.2rem}
+.dlg-foot{padding:.8rem 1.2rem 1rem;display:flex;gap:.5rem;justify-content:flex-end;border-top:1px solid var(--border)}
+.field{margin-bottom:.85rem}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:.7rem}
+.tip{background:oklch(0.62 0.16 210 / .12);border:1px solid oklch(0.62 0.16 210 / .3);border-radius:8px;padding:.6rem .8rem;font-size:12px;color:oklch(0.78 0.1 210);margin-bottom:.9rem}
+.tip .hl-ok{color:var(--ok)}
+.tip .hl-warn{color:var(--warn)}
+
+/* Upload zones */
+.upload-grid{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;margin-bottom:.85rem}
+.dz{border:2px dashed var(--border);border-radius:10px;min-height:90px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.35rem;cursor:pointer;transition:border-color .15s,background .15s;padding:.7rem;text-align:center;position:relative}
+.dz:hover,.dz.drag{border-color:var(--primary);background:oklch(0.62 0.22 260 / .07)}
+.dz.done{border-color:var(--ok);background:oklch(0.68 0.18 145 / .07)}
+.dz input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.dz-icon{color:var(--muted);width:22px;height:22px}
+.dz-lbl{font-size:11px;color:var(--muted)}
+.dz-done-name{font-size:11px;color:var(--ok);font-weight:600;word-break:break-all;text-align:center}
+.dz-up{width:100%;margin-top:.35rem}
+.progress-track{height:4px;background:var(--border);border-radius:2px;overflow:hidden}
+.progress-fill{height:100%;background:var(--primary);border-radius:2px;transition:width .2s}
+.progress-pct{font-size:10px;color:var(--muted);margin-top:2px;text-align:right}
+
+/* Ratio toggle */
+.ratio-row{display:flex;gap:.4rem;margin-bottom:.85rem}
+.r-btn{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--muted);cursor:pointer;font-size:12px;font-weight:600;padding:.45rem;text-align:center;transition:.15s}
+.r-btn.on{background:oklch(0.62 0.22 260 / .2);border-color:var(--primary);color:var(--primary)}
+.hint{font-size:11px;color:var(--muted);margin-top:3px}
+.hint.ok{color:var(--ok)}
+
+/* Platform tabs */
+.plat-row{display:flex;gap:.4rem;margin-bottom:.85rem}
+.plat-btn{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--muted);cursor:pointer;font-size:12px;font-weight:600;padding:.5rem;text-align:center;transition:.15s;display:flex;align-items:center;justify-content:center;gap:.35rem}
+.plat-btn.on{background:oklch(0.62 0.22 260 / .2);border-color:var(--primary);color:var(--primary)}
+
+/* Sched panel */
+#sched-panel{display:none}
+
+/* Toast */
+#toasts{position:fixed;bottom:1.2rem;right:1.2rem;z-index:9999;display:flex;flex-direction:column;gap:.5rem;pointer-events:none}
+.toast{display:flex;align-items:center;gap:.55rem;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:.55rem .9rem;font-size:13px;box-shadow:0 6px 24px #0006;min-width:220px;pointer-events:auto;animation:slideIn .25s var(--e-out)}
+.toast.ok{border-color:oklch(0.68 0.18 145 / .5);color:oklch(0.8 0.12 145)}
+.toast.err{border-color:oklch(0.62 0.22 25 / .5);color:oklch(0.8 0.16 25)}
+.toast.inf{border-color:oklch(0.62 0.16 210 / .5);color:oklch(0.78 0.12 210)}
+.toast svg{flex-shrink:0;width:16px;height:16px}
+@keyframes slideIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* GitHub Config modal specifics */
+.cfg-info{background:oklch(0.62 0.22 25 / .1);border:1px solid oklch(0.62 0.22 25 / .35);border-radius:8px;padding:.6rem .8rem;font-size:12px;color:oklch(0.82 0.14 25);margin-bottom:.9rem;line-height:1.6}
+.cfg-ok{background:oklch(0.68 0.18 145 / .1);border:1px solid oklch(0.68 0.18 145 / .3);border-radius:8px;padding:.6rem .8rem;font-size:12px;color:oklch(0.8 0.12 145);margin-bottom:.9rem}
+.token-wrap{position:relative}
+.token-wrap input{padding-right:2.2rem}
+.token-eye{position:absolute;right:.5rem;top:50%;transform:translateY(-50%);background:transparent;border:none;color:var(--muted);cursor:pointer;padding:.2rem;display:flex;align-items:center}
+
+/* Repo upload info */
+.repo-info{background:oklch(0.62 0.16 210 / .1);border:1px solid oklch(0.62 0.16 210 / .3);border-radius:8px;padding:.6rem .8rem;font-size:12px;color:oklch(0.78 0.1 210);margin-bottom:.7rem;line-height:1.6}
+.repo-info code{background:oklch(0.2 0.02 260);border-radius:4px;padding:.05rem .3rem;font-family:monospace}
+
+/* Empty state */
+.empty{text-align:center;padding:3rem 1rem;color:var(--muted)}
+.empty svg{width:40px;height:40px;margin:0 auto .75rem;opacity:.35;display:block}
+.empty h3{font-size:.95rem;font-weight:600;margin-bottom:.4rem;color:var(--text);opacity:.6}
+.empty p{font-size:12px;line-height:1.7;max-width:340px;margin:0 auto}
+
+/* Responsive */
+@media(max-width:500px){
+  .upload-grid{grid-template-columns:1fr}
+  .row2{grid-template-columns:1fr}
+  .ratio-row,.plat-row{flex-direction:column}
+}
+</style>
+</head>
+<body>
+
+<!-- ========================================================
+     NAV BAR
+     ======================================================== -->
+<nav>
+  <div class="nav-brand">
+    <i data-lucide="radio" style="width:20px;height:20px"></i>
+    StreamAdda <span style="color:var(--muted);font-weight:400;font-size:.85rem">v8</span>
+  </div>
+  <div class="nav-right">
+    <div id="livepill">
+      <span class="d"></span>
+      <span id="livecount">0</span> LIVE
+    </div>
+    <button class="btn btn-ghost btn-icon" title="GitHub Configuration" onclick="openCfg()" id="cfg-btn">
+      <i data-lucide="settings-2"></i>
+    </button>
+    <button class="btn btn-primary" onclick="openNew()" id="new-btn" disabled title="Configure GitHub settings first">
+      <i data-lucide="plus"></i> New stream
+    </button>
+  </div>
+</nav>
+
+<!-- ========================================================
+     MAIN SHELL
+     ======================================================== -->
+<div class="shell">
+  <div class="top-bar">
+    <h1>Active Streams</h1>
+    <div style="display:flex;gap:.5rem;align-items:center">
+      <span id="cfg-status" style="font-size:11px;color:var(--muted)"></span>
+      <button class="btn btn-ghost btn-sm" onclick="fetchStreams()" title="Refresh">
+        <i data-lucide="refresh-cw" style="width:12px;height:12px"></i> Refresh
+      </button>
+    </div>
+  </div>
+
+  <div id="grid" class="grid">
+    <!-- Cards rendered here -->
+  </div>
+  <div id="empty" class="empty" style="display:none">
+    <i data-lucide="satellite-dish"></i>
+    <h3>No active streams</h3>
+    <p>Configure your GitHub settings above, then click <b>New stream</b> to dispatch your first live broadcast via GitHub Actions.</p>
+  </div>
+</div>
+
+<!-- ========================================================
+     TOAST CONTAINER
+     ======================================================== -->
+<div id="toasts"></div>
+
+<!-- ========================================================
+     DIALOG: GITHUB CONFIGURATION
+     ======================================================== -->
+<dialog id="dlg-cfg">
+  <div class="dlg-head">
+    <h2><i data-lucide="github" style="width:16px;height:16px;vertical-align:middle;margin-right:.35rem"></i>GitHub Configuration</h2>
+    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('dlg-cfg').close()"><i data-lucide="x"></i></button>
+  </div>
+  <div class="dlg-body">
+    <div class="cfg-info">
+      <b>Required once.</b> Your PAT is stored only in <code style="background:oklch(0.2 0.02 260);border-radius:3px;padding:.05rem .3rem;font-family:monospace">localStorage</code> — never sent anywhere except directly to <code style="background:oklch(0.2 0.02 260);border-radius:3px;padding:.05rem .3rem;font-family:monospace">api.github.com</code>. Use a <b>Classic PAT</b> with <b>repo</b> + <b>workflow</b> scopes.
+    </div>
+    <div class="field">
+      <label>GitHub Personal Access Token (PAT)</label>
+      <div class="token-wrap">
+        <input type="password" id="cfg-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" autocomplete="off" />
+        <button class="token-eye" onclick="toggleTokenVis()" id="token-eye-btn"><i data-lucide="eye" id="token-eye-icon" style="width:15px;height:15px"></i></button>
+      </div>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Repository Owner (username or org)</label>
+        <input type="text" id="cfg-owner" placeholder="your-github-username" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label>Repository Name</label>
+        <input type="text" id="cfg-repo" placeholder="streamadda-v8" autocomplete="off" />
+      </div>
+    </div>
+    <div class="field">
+      <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer">
+        <input type="checkbox" id="cfg-verify" />
+        <span>Verify connection after saving (recommended)</span>
+      </label>
+    </div>
+    <div id="cfg-verify-result" style="display:none"></div>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn btn-ghost" onclick="document.getElementById('dlg-cfg').close()">Cancel</button>
+    <button class="btn btn-primary" onclick="saveCfg()"><i data-lucide="save"></i> Save &amp; connect</button>
+  </div>
+</dialog>
+
+<!-- ========================================================
+     DIALOG: NEW STREAM
+     ======================================================== -->
+<dialog id="dlg">
+  <div class="dlg-head">
+    <h2 id="dlg-title">New Stream</h2>
+    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('dlg').close()"><i data-lucide="x"></i></button>
+  </div>
+  <div class="dlg-body">
+
+    <!-- Tip box -->
+    <div class="tip" id="tip-text">
+      <b>Tip:</b> the photo fills the time, the video plays once at the very end. Set the total minutes and the app figures out the rest.
+    </div>
+
+    <!-- File upload notice (replaces file upload in GitHub model) -->
+    <div class="repo-info" id="uploads">
+      <b>📂 Media files must be in your repository root:</b><br/>
+      &bull; Commit your cover photo as <code>live_photo.jpg</code><br/>
+      &bull; Commit your video as <code>live_video.mp4</code><br/>
+      Both files must exist in the <code>main</code> branch before starting.
+    </div>
+
+    <!-- Stream name -->
+    <div class="field">
+      <label>Stream Name</label>
+      <input type="text" id="f-name" placeholder="My Live Stream" maxlength="80" />
+    </div>
+
+    <!-- Platform -->
+    <div id="creds">
+      <label style="margin-bottom:.4rem">Platform</label>
+      <div class="plat-row" id="plat-row">
+        <button class="plat-btn on" id="plat-yt" onclick="setPlatform('youtube')">
+          <i data-lucide="youtube" style="width:14px;height:14px"></i> YouTube
+        </button>
+        <button class="plat-btn" id="plat-fb" onclick="setPlatform('facebook')">
+          <i data-lucide="tv-2" style="width:14px;height:14px"></i> Facebook
+        </button>
+      </div>
+      <input type="hidden" id="f-platform" value="youtube" />
+
+      <!-- Stream key -->
+      <div class="field">
+        <label>Stream Key</label>
+        <div class="token-wrap">
+          <input type="password" id="f-key" placeholder="xxxx-xxxx-xxxx-xxxx" autocomplete="off" />
+          <button class="token-eye" onclick="toggleKeyVis()" id="key-eye-btn"><i data-lucide="eye" id="key-eye-icon" style="width:15px;height:15px"></i></button>
+        </div>
+      </div>
+
+      <!-- Backup RTMP -->
+      <div class="field">
+        <label>Backup RTMP URL (optional, full URL + key)</label>
+        <input type="text" id="f-backup" placeholder="rtmps://live-api-s.facebook.com:443/rtmp/xxxx" />
+      </div>
+    </div>
+
+    <!-- Ratio -->
+    <label style="margin-bottom:.4rem">Video Ratio</label>
+    <div class="ratio-row">
+      <button class="r-btn" id="r169" onclick="setRatio('16:9')">16:9 &mdash; Landscape</button>
+      <button class="r-btn on" id="r916" onclick="setRatio('9:16')">9:16 &mdash; Portrait / Shorts</button>
+    </div>
+    <div class="hint" id="ratio-hint">720x1280 &mdash; YouTube Shorts / Facebook Reels</div>
+    <div style="height:.85rem"></div>
+
+    <!-- Duration -->
+    <div class="field">
+      <label>Total Duration (minutes)</label>
+      <input type="number" id="f-dur" placeholder="60" min="2" max="360" oninput="durHint()" />
+      <div class="hint" id="dur-hint">Photo plays first, the video plays once at the end, then the stream ends.</div>
+    </div>
+
+    <!-- YouTube Video ID -->
+    <div class="field">
+      <label>Live Video ID / URL (for YouTube Studio monitoring)</label>
+      <input type="text" id="f-ytvid" placeholder="dQw4w9WgXcQ  or  https://youtu.be/dQw4w9WgXcQ" />
+    </div>
+
+    <!-- Scheduling panel -->
+    <div class="field">
+      <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer">
+        <input type="checkbox" id="f-sched" onchange="toggleSched()" />
+        <span>Schedule for a specific time</span>
+      </label>
+    </div>
+    <div id="sched-panel">
+      <div class="row2">
+        <div class="field">
+          <label>Start At (local time)</label>
+          <input type="datetime-local" id="f-start" />
+        </div>
+        <div class="field">
+          <label>Hard Stop At (local time)</label>
+          <input type="datetime-local" id="f-stop" />
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn btn-ghost" onclick="document.getElementById('dlg').close()">Cancel</button>
+    <button class="btn btn-primary" id="submit-btn" onclick="submitStream()">
+      <i data-lucide="radio"></i>
+      <span id="submit-lbl">Start stream</span>
+    </button>
+  </div>
+</dialog>
+
+<!-- ========================================================
+     DIALOG: EDIT LIVE STREAM
+     ======================================================== -->
+<dialog id="dlg-edit">
+  <div class="dlg-head">
+    <h2>Edit Stream</h2>
+    <button class="btn btn-ghost btn-icon" onclick="document.getElementById('dlg-edit').close()"><i data-lucide="x"></i></button>
+  </div>
+  <div class="dlg-body">
+    <div class="tip">Changes apply to the display data only. The live GitHub Actions run continues unaffected.</div>
+    <div class="field">
+      <label>Stream Name</label>
+      <input type="text" id="e-name" placeholder="My Live Stream" maxlength="80" />
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Total Duration (min)</label>
+        <input type="number" id="e-dur" min="2" max="360" />
+      </div>
+      <div class="field">
+        <label>Hard Stop At</label>
+        <input type="datetime-local" id="e-stop" />
+      </div>
+    </div>
+    <div class="field">
+      <label>YouTube Video ID / URL</label>
+      <input type="text" id="e-ytvid" placeholder="dQw4w9WgXcQ" />
+    </div>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn btn-ghost" onclick="document.getElementById('dlg-edit').close()">Cancel</button>
+    <button class="btn btn-primary" onclick="submitEdit()"><i data-lucide="check"></i> Apply</button>
+  </div>
+</dialog>
+
+<!-- ========================================================
+     JAVASCRIPT ENGINE  —  Re-engineered for GitHub Actions
+     All FastAPI /api/* endpoints have been replaced with
+     direct calls to the official GitHub REST API.
+     State is managed entirely in localStorage.
+     ======================================================== -->
+<script>
+'use strict';
+
+// ============================================================
+// GLOBAL STATE
+// ============================================================
+const S = {
+  streams: {},      // { [id]: streamInfo }  – keyed by local UUID
+  timers:  {},      // uptime tick intervals
+  polls:   {},      // log-poll intervals per stream id
+  cfg:     null,    // { token, owner, repo }  loaded from localStorage
+  mode:    'new',   // 'new' | 'restart'
+  editId:  null,    // stream id being edited/restarted
+  ratio:   '9:16',
+  platform:'youtube',
+};
+
+// ============================================================
+// GITHUB CONFIG  (localStorage-backed)
+// ============================================================
+const LS_CFG    = 'sa_github_cfg';
+const LS_STREAMS = 'sa_streams_v8';
+
+function loadCfg() {
+  try {
+    const raw = localStorage.getItem(LS_CFG);
+    if (raw) S.cfg = JSON.parse(raw);
+  } catch(_) { S.cfg = null; }
+  updateCfgUI();
+}
+
+function saveCfgToStorage(cfg) {
+  localStorage.setItem(LS_CFG, JSON.stringify(cfg));
+  S.cfg = cfg;
+  updateCfgUI();
+}
+
+function updateCfgUI() {
+  const newBtn  = document.getElementById('new-btn');
+  const status  = document.getElementById('cfg-status');
+  const cfgBtn  = document.getElementById('cfg-btn');
+  if (S.cfg && S.cfg.token && S.cfg.owner && S.cfg.repo) {
+    newBtn.disabled  = false;
+    newBtn.title     = 'Start a new live stream via GitHub Actions';
+    status.textContent = `✓ ${S.cfg.owner}/${S.cfg.repo}`;
+    status.style.color = 'oklch(0.68 0.18 145)';
+    cfgBtn.title = `GitHub: ${S.cfg.owner}/${S.cfg.repo} (click to edit)`;
+  } else {
+    newBtn.disabled  = true;
+    newBtn.title     = 'Configure GitHub settings first';
+    status.textContent = '⚠️ GitHub not configured';
+    status.style.color = 'oklch(0.82 0.14 25)';
+    cfgBtn.title = 'Configure GitHub connection';
+  }
+}
+
+// GitHub API helper
+async function ghFetch(path, options = {}) {
+  if (!S.cfg || !S.cfg.token) throw new Error('GitHub not configured');
+  const res = await fetch(`https://api.github.com${path}`, {
+    ...options,
+    headers: {
+      'Authorization': `token ${S.cfg.token}`,
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      ...(options.headers || {}),
+    },
+  });
+  return res;
+}
+
+// ============================================================
+// OPEN GITHUB CONFIG DIALOG
+// ============================================================
+function openCfg() {
+  const dlg = document.getElementById('dlg-cfg');
+  document.getElementById('cfg-verify-result').style.display = 'none';
+  if (S.cfg) {
+    document.getElementById('cfg-token').value = S.cfg.token || '';
+    document.getElementById('cfg-owner').value = S.cfg.owner || '';
+    document.getElementById('cfg-repo').value  = S.cfg.repo  || '';
+  }
+  document.getElementById('cfg-verify').checked = true;
+  dlg.showModal();
+  icons();
+}
+
+async function saveCfg() {
+  const token = document.getElementById('cfg-token').value.trim();
+  const owner = document.getElementById('cfg-owner').value.trim();
+  const repo  = document.getElementById('cfg-repo').value.trim();
+  const verify = document.getElementById('cfg-verify').checked;
+
+  if (!token || !owner || !repo) {
+    toast('Please fill in all three fields', 'err');
+    return;
+  }
+  if (!token.startsWith('gh')) {
+    toast('PAT should start with "ghp_" or "github_pat_"', 'err');
+    return;
+  }
+
+  const resultEl = document.getElementById('cfg-verify-result');
+
+  if (verify) {
+    resultEl.style.display = 'block';
+    resultEl.className = 'cfg-info';
+    resultEl.innerHTML = '<i data-lucide="loader-2" style="width:12px;height:12px;vertical-align:middle;margin-right:.3rem"></i> Verifying connection to GitHub...';
+    icons();
+
+    try {
+      // Test PAT by fetching user info
+      const uRes = await fetch('https://api.github.com/user', {
+        headers: {
+          'Authorization': `token ${token}`,
+          'Accept': 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        }
+      });
+      if (!uRes.ok) {
+        const err = await uRes.json().catch(() => ({ message: `HTTP ${uRes.status}` }));
+        resultEl.className = 'cfg-info';
+        resultEl.innerHTML = `❌ <b>PAT is invalid or expired:</b> ${esc(err.message || uRes.status)}`;
+        return;
+      }
+      const uData = await uRes.json();
+
+      // Test repo access
+      const rRes = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, {
+        headers: {
+          'Authorization': `token ${token}`,
+          'Accept': 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        }
+      });
+      if (!rRes.ok) {
+        const rErr = await rRes.json().catch(() => ({ message: `HTTP ${rRes.status}` }));
+        resultEl.className = 'cfg-info';
+        resultEl.innerHTML = `❌ <b>Repository not accessible:</b> ${esc(rErr.message || rRes.status)}<br/>Check owner/repo name and PAT scope (needs <b>repo</b> + <b>workflow</b>).`;
+        return;
+      }
+      const rData = await rRes.json();
+
+      resultEl.className = 'cfg-ok';
+      resultEl.innerHTML = `✅ <b>Connected!</b> Authenticated as <b>${esc(uData.login)}</b>. Repository <b>${esc(rData.full_name)}</b> is accessible.`;
+      icons();
+    } catch (err) {
+      resultEl.className = 'cfg-info';
+      resultEl.innerHTML = `❌ Network error: ${esc(err.message)}`;
+      return;
+    }
+  } else {
+    resultEl.style.display = 'none';
+  }
+
+  saveCfgToStorage({ token, owner, repo });
+  toast('GitHub configuration saved!', 'ok');
+
+  if (!verify) {
+    document.getElementById('dlg-cfg').close();
+  }
+}
+
+function toggleTokenVis() {
+  const inp  = document.getElementById('cfg-token');
+  const icon = document.getElementById('token-eye-icon');
+  const show = inp.type === 'password';
+  inp.type = show ? 'text' : 'password';
+  icon.setAttribute('data-lucide', show ? 'eye-off' : 'eye');
+  icons();
+}
+function toggleKeyVis() {
+  const inp  = document.getElementById('f-key');
+  const icon = document.getElementById('key-eye-icon');
+  const show = inp.type === 'password';
+  inp.type = show ? 'text' : 'password';
+  icon.setAttribute('data-lucide', show ? 'eye-off' : 'eye');
+  icons();
+}
+
+// ============================================================
+// STREAM STATE  (localStorage-backed)
+// ============================================================
+function loadStreams() {
+  try {
+    const raw = localStorage.getItem(LS_STREAMS);
+    if (raw) S.streams = JSON.parse(raw);
+  } catch(_) { S.streams = {}; }
+}
+function persistStreams() {
+  localStorage.setItem(LS_STREAMS, JSON.stringify(S.streams));
+}
+function genId() {
+  return 'sa-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+}
+
+// ============================================================
+// GITHUB ACTIONS API HELPERS
+// ============================================================
+async function dispatchWorkflow(payload) {
+  const { owner, repo } = S.cfg;
+  const res = await ghFetch(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/dispatches`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      event_type: 'start-stream',
+      client_payload: payload,
+    }),
+  });
+  // GitHub returns 204 No Content on success
+  if (res.status === 204) return true;
+  const body = await res.json().catch(() => ({}));
+  throw new Error(body.message || `GitHub API error ${res.status}`);
+}
+
+async function findLatestRun(dispatchedAfter) {
+  const { owner, repo } = S.cfg;
+  // List recent workflow runs triggered by repository_dispatch
+  const res = await ghFetch(
+    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs?event=repository_dispatch&per_page=10`
+  );
+  if (!res.ok) return null;
+  const data = await res.json();
+  const runs = data.workflow_runs || [];
+  // Find the most recent run created after our dispatch time
+  const after = new Date(dispatchedAfter).getTime();
+  const match = runs
+    .filter(r => new Date(r.created_at).getTime() >= after - 10000) // 10s tolerance
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  return match[0] || null;
+}
+
+async function getRunStatus(runId) {
+  const { owner, repo } = S.cfg;
+  const res = await ghFetch(
+    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}`
+  );
+  if (!res.ok) return null;
+  return await res.json();
+}
+
+async function getRunJobs(runId) {
+  const { owner, repo } = S.cfg;
+  const res = await ghFetch(
+    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/jobs?per_page=5`
+  );
+  if (!res.ok) return null;
+  return await res.json();
+}
+
+async function getJobLogs(jobId) {
+  const { owner, repo } = S.cfg;
+  // This returns a 302 redirect to a signed log URL
+  const res = await ghFetch(
+    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/jobs/${jobId}/logs`,
+    { redirect: 'follow' }
+  );
+  if (!res.ok) return null;
+  return await res.text();
+}
+
+// Map GitHub run status/conclusion to StreamAdda status
+function ghStatusToSA(run) {
+  if (!run) return 'offline';
+  const { status, conclusion } = run;
+  if (status === 'queued')      return 'starting';
+  if (status === 'in_progress') return 'online';
+  if (status === 'completed') {
+    if (conclusion === 'success')   return 'offline';
+    if (conclusion === 'cancelled') return 'offline';
+    if (conclusion === 'failure')   return 'offline';
+    if (conclusion === 'timed_out') return 'offline';
+    return 'offline';
+  }
+  return 'starting';
+}
+
+// ============================================================
+// MAIN POLLING  —  fetchStreams replaces the original SSE
+// Runs on a 5-second interval when streams are active.
+// ============================================================
+let _globalPollInterval = null;
+
+async function fetchStreams() {
+  loadStreams();
+
+  const ids = Object.keys(S.streams);
+  if (ids.length === 0) {
+    reconcile({});
+    return;
+  }
+
+  // For each tracked stream, refresh its GitHub run status
+  for (const id of ids) {
+    const info = S.streams[id];
+    if (!info) continue;
+
+    // If already offline, skip heavy polling  
+    if (info.status === 'offline' && info._settled) continue;
+
+    if (info.run_id && S.cfg) {
+      try {
+        const run = await getRunStatus(info.run_id);
+        if (run) {
+          const newStatus = ghStatusToSA(run);
+
+          // Compute uptime from dispatch time
+          const startTs = info.uptime_start || Date.parse(info.dispatched_at);
+          const nowSec  = Math.floor((Date.now() - startTs) / 1000);
+
+          // Calculate phase based on elapsed time
+          let currentPhase    = null;
+          let phaseRemaining  = null;
+          let photoDuration   = info.photo_dur  || 0;
+          let videoDuration   = info.video_dur  || 0;
+          if (isActive(newStatus) && startTs) {
+            const elapsed = Math.max(0, (Date.now() - startTs) / 1000);
+            if (photoDuration > 0 && elapsed < photoDuration) {
+              currentPhase   = 'photo_phase';
+              phaseRemaining = Math.max(0, photoDuration - elapsed);
+            } else if (videoDuration > 0 && elapsed < photoDuration + videoDuration) {
+              currentPhase   = 'video_phase';
+              phaseRemaining = Math.max(0, photoDuration + videoDuration - elapsed);
+            }
+          }
+
+          // Mark settled once completed
+          const settled = run.status === 'completed';
+
+          S.streams[id] = {
+            ...info,
+            status:         newStatus,
+            run_status:     run.status,
+            run_conclusion: run.conclusion || null,
+            uptime:         isActive(newStatus) ? nowSec : info.uptime,
+            current_phase:  currentPhase,
+            phase_remaining: phaseRemaining,
+            photo_duration: photoDuration,
+            video_duration: videoDuration,
+            _settled:       settled,
+          };
+        }
+      } catch(_) { /* network blip, keep last known status */ }
+    } else if (!info.run_id && info.dispatched_at && S.cfg) {
+      // We dispatched but don't have a run_id yet — search for the run
+      try {
+        const run = await findLatestRun(info.dispatched_at);
+        if (run) {
+          S.streams[id] = { ...info, run_id: run.id };
+        }
+      } catch(_) {}
+    }
+  }
+
+  persistStreams();
+  reconcile(S.streams);
+}
+
+function startGlobalPoll() {
+  if (_globalPollInterval) return;
+  _globalPollInterval = setInterval(fetchStreams, 5000);
+}
+function stopGlobalPoll() {
+  clearInterval(_globalPollInterval);
+  _globalPollInterval = null;
+}
+
+// ============================================================
+// LOG POLLING PER CARD
+// ============================================================
+function startLogPoll(id) {
+  if (S.polls[id]) clearInterval(S.polls[id]);
+  S.polls[id] = setInterval(() => pollLogs(id), 8000);
+  // Fetch immediately
+  pollLogs(id);
+}
+function stopLogPoll(id) {
+  clearInterval(S.polls[id]);
+  delete S.polls[id];
+}
+
+async function pollLogs(id) {
+  const info = S.streams[id];
+  if (!info || !info.run_id || !S.cfg) return;
+  try {
+    // Get jobs for the run
+    const jobs = await getRunJobs(info.run_id);
+    if (!jobs || !jobs.jobs || jobs.jobs.length === 0) return;
+
+    const job = jobs.jobs[0];  // main streaming job
+
+    // Build a synthetic log from step status — always available
+    const stepLines = buildStepLog(job, info);
+
+    // Try to also fetch raw log text (may fail with CORS on some GitHub plans)
+    let rawLog = null;
+    try {
+      if (job.id) rawLog = await getJobLogs(job.id);
+    } catch(_) { rawLog = null; }
+
+    const logEl = document.getElementById('log-' + id);
+    if (!logEl) return;
+
+    if (rawLog) {
+      // Parse the raw log: each line is timestamp\ttext
+      const lines = rawLog.split('\n')
+        .map(l => l.replace(/^\d{4}-\d{2}-\d{2}T[\d:.Z]+\s/, '').trim())
+        .filter(l => l.length > 0);
+      setLogLines(id, lines);
+    } else {
+      // Fallback: step-based status display
+      setLogLines(id, stepLines);
+    }
+  } catch(_) {}
+}
+
+function buildStepLog(job, info) {
+  const lines = [];
+  lines.push(`[SA] Run #${info.run_id}  •  Status: ${job.status}${job.conclusion ? ' / ' + job.conclusion : ''}`);
+  lines.push(`[SA] Stream: ${info.name || 'Live Stream'}  •  ${info.platform || 'youtube'}  •  ${info.ratio || '9:16'}  •  ${info.total_minutes || '?'}m`);
+  lines.push('');
+  if (job.steps && job.steps.length > 0) {
+    for (const step of job.steps) {
+      const statusIcon = step.status === 'completed'
+        ? (step.conclusion === 'success' ? '✅' : '❌')
+        : (step.status === 'in_progress' ? '▶️' : '⏳');
+      lines.push(`${statusIcon} ${step.name}  [${step.status}${step.conclusion ? ' / ' + step.conclusion : ''}]`);
+    }
+  }
+
+  // Add timing estimate if stream is active
+  if (isActive(info.status) && info.uptime_start) {
+    const elapsed = Math.max(0, Math.floor((Date.now() - info.uptime_start) / 1000));
+    const total   = (info.total_minutes || 0) * 60;
+    const remain  = Math.max(0, total - elapsed);
+    lines.push('');
+    lines.push(`[SA] Elapsed: ${fmtSec(elapsed)}  •  Remaining: ${fmtSec(remain)}  •  Total: ${info.total_minutes || '?'}m`);
+    if (info.photo_dur && elapsed < info.photo_dur) {
+      lines.push(`[SA] Current phase: PHOTO (≈ ${fmtSec(info.photo_dur - elapsed)} left)`);
+    } else if (info.video_dur) {
+      const vidElapsed = elapsed - (info.photo_dur || 0);
+      const vidRemain  = Math.max(0, info.video_dur - vidElapsed);
+      lines.push(`[SA] Current phase: VIDEO (≈ ${fmtSec(vidRemain)} left)`);
+    }
+  }
+  return lines;
+}
+
+function setLogLines(id, lines) {
+  const logEl = document.getElementById('log-' + id);
+  if (!logEl) return;
+  logEl.innerHTML = '';
+  for (const line of lines.slice(-250)) {
+    const d = document.createElement('div');
+    d.textContent = line;
+    if (/error|fail|refused|broken|unable|end of file|cannot open/i.test(line)) {
+      d.style.color = 'oklch(0.75 0.15 25)';
+    } else if (/\[action\]|\[sa\]/i.test(line)) {
+      d.style.color = 'oklch(0.85 0.14 90)';
+    } else if (/warn/i.test(line)) {
+      d.style.color = 'oklch(0.82 0.13 90)';
+    } else if (/frame=|fps=|bitrate=/i.test(line)) {
+      d.style.color = 'oklch(0.75 0.1 236)';
+    } else if (/✅|success/i.test(line)) {
+      d.style.color = 'oklch(0.8 0.12 145)';
+    } else if (/❌|fatal/i.test(line)) {
+      d.style.color = 'oklch(0.75 0.15 25)';
+    } else if (/▶️|in_progress/i.test(line)) {
+      d.style.color = 'oklch(0.8 0.14 60)';
+    }
+    logEl.appendChild(d);
+  }
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// ============================================================
+// CARD RECONCILIATION  (same pattern as original)
+// ============================================================
+function reconcile(fresh) {
+  // Remove cards for deleted streams
+  for (const id of Object.keys(S.streams)) {
+    if (!fresh[id]) removeCard(id);
+  }
+  // Add/update cards
+  for (const [id, info] of Object.entries(fresh)) {
+    if (document.getElementById('card-' + id)) {
+      updateCard(info);
+    } else {
+      renderCard(info);
+    }
+  }
+  // Show/hide empty state
+  const ids = Object.keys(fresh);
+  document.getElementById('empty').style.display = ids.length === 0 ? 'block' : 'none';
+
+  // Live pill
+  const liveCount = Object.values(fresh).filter(s => isActive(s.status)).length;
+  const pill = document.getElementById('livepill');
+  if (liveCount > 0) {
+    pill.style.display = 'inline-flex';
+    document.getElementById('livecount').textContent = liveCount;
+  } else {
+    pill.style.display = 'none';
+  }
+
+  // Start/stop global poll based on whether there are active streams
+  const hasActive = Object.values(fresh).some(s => isActive(s.status) || s.status === 'starting');
+  if (hasActive) {
+    startGlobalPoll();
+  } else if (!hasActive && Object.keys(fresh).length > 0) {
+    // Keep polling slowly to catch settled states, then stop
+    startGlobalPoll();
+  }
+
+  icons();
+}
+
+function isActive(st) {
+  return ['online', 'photo_phase', 'video_phase', 'starting'].includes(st);
+}
+function badgeCls(st) {
+  return {
+    online:      'b-online',
+    photo_phase: 'b-photo',
+    video_phase: 'b-video',
+    starting:    'b-starting',
+    scheduled:   'b-scheduled',
+    offline:     'b-offline',
+  }[st] || 'b-offline';
+}
+function badgeLbl(st) {
+  return {
+    online:      'ONLINE',
+    photo_phase: 'PHOTO',
+    video_phase: 'VIDEO',
+    starting:    'STARTING',
+    scheduled:   'SCHEDULED',
+    offline:     'OFFLINE',
+  }[st] || st.toUpperCase();
+}
+
+// ============================================================
+// CARD RENDERING
+// ============================================================
+function finishText(info) {
+  if (!isActive(info.status) || !info.total_minutes) return '';
+  const total_seconds = info.total_minutes * 60;
+  const startTs = info.uptime_start || Date.parse(info.dispatched_at);
+  const endMs = startTs + total_seconds * 1000;
+  return new Date(endMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function cardHTML(info) {
+  const active  = isActive(info.status);
+  const sched   = info.status === 'scheduled';
+  const off     = info.status === 'offline';
+  const uptime  = info.uptime || 0;
+  const starting = info.status === 'starting';
+  return `
+  <div class="card-body">
+    <div class="card-top">
+      <div style="min-width:0;flex:1;">
+        <div class="card-title">${esc(info.name || 'Live Stream')}</div>
+        <div class="card-meta">
+          <span><i data-lucide="ratio"></i> ${esc(info.ratio || '9:16')}</span>
+          <span><i data-lucide="clock"></i> ${info.total_minutes || '?'} min</span>
+          ${info.platform ? `<span><i data-lucide="${info.platform === 'youtube' ? 'youtube' : 'tv-2'}"></i> ${esc(info.platform)}</span>` : ''}
+          ${info.total_restarts ? `<span><i data-lucide="rotate-cw"></i> x${info.total_restarts}</span>` : ''}
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:.4rem;">
+        <span class="badge ${badgeCls(info.status)}"><span class="d"></span>${badgeLbl(info.status)}</span>
+        <button class="iconbtn" title="Delete" onclick="delStream('${info.id}')"><i data-lucide="trash-2"></i></button>
+      </div>
+    </div>
+
+    <div class="phase" style="${info.current_phase ? '' : 'display:none;'}">
+      <div class="phase-row">
+        <span class="phase-lbl">
+          <i data-lucide="${info.current_phase === 'video_phase' ? 'clapperboard' : 'image'}"></i>
+          ${info.current_phase === 'video_phase' ? 'Video playing' : 'Photo playing'}
+        </span>
+        <span class="phase-rem">${info.phase_remaining != null ? fmtSec(info.phase_remaining) + ' left' : ''}</span>
+      </div>
+      <div class="track">
+        <div class="fill ${info.current_phase === 'video_phase' ? 'video' : 'photo'}" style="width:${calcPhasePct(info)}%"></div>
+      </div>
+    </div>
+
+    <hr class="divider"/>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.85rem;">
+      <span class="stat-k"><i data-lucide="timer"></i>&nbsp;Uptime</span>
+      <span class="stat-v js-uptime" style="font-size:1rem;">${active ? fmt(uptime) : (sched ? 'waiting' : '-')}</span>
+    </div>
+
+    ${active  ? `<div class="finish"><i data-lucide="flag"></i> Ends around <b class="js-finish">${finishText(info)}</b></div>` : ''}
+    ${info.stop_at ? `<div class="finish"><i data-lucide="alarm-clock"></i> Hard stop <b>${fmtISO(info.stop_at)}</b></div>` : ''}
+    ${info.run_id ? `<div class="finish" style="opacity:.55"><i data-lucide="github"></i> Run #<a href="https://github.com/${esc(S.cfg && S.cfg.owner ? S.cfg.owner : '')}/${esc(S.cfg && S.cfg.repo ? S.cfg.repo : '')}/actions/runs/${info.run_id}" target="_blank" style="color:var(--muted);text-decoration:underline">${info.run_id}</a></div>` : ''}
+
+    <div class="actions">
+      ${active || starting ? `
+        <button class="btn btn-danger grow" onclick="stopStream('${info.id}')"><i data-lucide="square"></i> Stop</button>
+        <button class="btn btn-sky" onclick="openEdit('${info.id}')"><i data-lucide="sliders-horizontal"></i> Edit</button>
+      ` : ''}
+      ${off ? `
+        <button class="btn btn-primary grow" onclick="openRestart('${info.id}')"><i data-lucide="rotate-cw"></i> Restart</button>
+      ` : ''}
+      ${sched ? `<button class="btn btn-danger grow" onclick="stopStream('${info.id}')"><i data-lucide="x"></i> Cancel</button>` : ''}
+      <button class="btn btn-ghost btn-icon" title="Logs" onclick="toggleLog('${info.id}')"><i data-lucide="terminal"></i></button>
+    </div>
+
+    <div class="logwrap" id="logwrap-${info.id}" style="display:none;">
+      <div class="logwrap-head">
+        <span>GitHub Actions output</span>
+        <div style="display:flex;gap:.35rem;">
+          ${info.run_id ? `<a class="btn btn-ghost btn-sm" href="https://github.com/${esc(S.cfg && S.cfg.owner ? S.cfg.owner : '')}/${esc(S.cfg && S.cfg.repo ? S.cfg.repo : '')}/actions/runs/${info.run_id}" target="_blank" style="text-decoration:none;font-size:11px;"><i data-lucide="external-link" style="width:11px;height:11px"></i> Open in GitHub</a>` : ''}
+          <button class="btn btn-ghost btn-sm" onclick="clearLog('${info.id}')">Clear</button>
+        </div>
+      </div>
+      <div class="log" id="log-${info.id}"><div style="color:oklch(0.6 0.02 250);">Waiting for GitHub Actions output...</div></div>
+    </div>
+  </div>`;
+}
+
+function calcPhasePct(info) {
+  if (!info.current_phase || info.phase_remaining == null) return 0;
+  const total = info.current_phase === 'video_phase'
+    ? (info.video_dur || info.video_duration || 0)
+    : (info.photo_dur || info.photo_duration || 0);
+  if (total <= 0) return 0;
+  return Math.min(100, Math.round((1 - info.phase_remaining / total) * 100));
+}
+
+function renderCard(info) {
+  const g = document.getElementById('grid');
+  const d = document.createElement('div');
+  d.id        = 'card-' + info.id;
+  d.className = 'card ' + (isActive(info.status) ? 'is-live' : 'is-off');
+  d.innerHTML = cardHTML(info);
+  g.appendChild(d);
+  startTimer(info.id, info.status, info.uptime);
+  icons();
+}
+
+function updateCard(info) {
+  const c = document.getElementById('card-' + info.id);
+  if (!c) { renderCard(info); return; }
+  const wasActive = c.classList.contains('is-live');
+  const nowActive = isActive(info.status);
+  // Full re-render on state transition
+  if (wasActive !== nowActive) {
+    c.className  = 'card ' + (nowActive ? 'is-live' : 'is-off');
+    c.innerHTML  = cardHTML(info);
+    startTimer(info.id, info.status, info.uptime);
+    icons();
+    return;
+  }
+  c.className = 'card ' + (nowActive ? 'is-live' : 'is-off');
+
+  const badge = c.querySelector('.badge');
+  if (badge) {
+    badge.className = 'badge ' + badgeCls(info.status);
+    badge.innerHTML = '<span class="d"></span>' + badgeLbl(info.status);
+  }
+
+  const ph = c.querySelector('.phase');
+  if (ph) {
+    if (info.current_phase && info.phase_remaining != null) {
+      ph.style.display = 'block';
+      const pct  = calcPhasePct(info);
+      const fill = ph.querySelector('.fill');
+      if (fill) {
+        fill.style.width = pct + '%';
+        fill.className   = 'fill ' + (info.current_phase === 'video_phase' ? 'video' : 'photo');
+      }
+      const lbl = ph.querySelector('.phase-lbl');
+      if (lbl) lbl.innerHTML = `<i data-lucide="${info.current_phase === 'video_phase' ? 'clapperboard' : 'image'}"></i>${info.current_phase === 'video_phase' ? 'Video playing' : 'Photo playing'}`;
+      const rem = ph.querySelector('.phase-rem');
+      if (rem) rem.textContent = fmtSec(info.phase_remaining) + ' left';
+    } else {
+      ph.style.display = 'none';
+    }
+  }
+
+  const fn = c.querySelector('.js-finish');
+  if (fn) fn.textContent = finishText(info);
+
+  if (!nowActive) {
+    c.querySelectorAll('.js-uptime').forEach(e => {
+      e.textContent = info.status === 'scheduled' ? 'waiting' : '-';
+    });
+  }
+
+  startTimer(info.id, info.status, info.uptime);
+  icons();
+}
+
+function removeCard(id) {
+  clearInterval(S.timers[id]); delete S.timers[id];
+  stopLogPoll(id);
+  document.getElementById('card-' + id)?.remove();
+  delete S.streams[id];
+  persistStreams();
+}
+
+function startTimer(id, status, init) {
+  clearInterval(S.timers[id]);
+  if (!isActive(status)) return;
+  const info    = S.streams[id];
+  const startTs = info ? (info.uptime_start || Date.parse(info.dispatched_at)) : null;
+  // If we have a real start timestamp, use it for accuracy; otherwise count from `init`
+  if (startTs) {
+    S.timers[id] = setInterval(() => {
+      const s = Math.max(0, Math.floor((Date.now() - startTs) / 1000));
+      document.querySelectorAll('#card-' + id + ' .js-uptime').forEach(e => e.textContent = fmt(s));
+    }, 1000);
+  } else {
+    let s = init || 0;
+    S.timers[id] = setInterval(() => {
+      s++;
+      document.querySelectorAll('#card-' + id + ' .js-uptime').forEach(e => e.textContent = fmt(s));
+    }, 1000);
+  }
+}
+
+function fmt(s) {
+  s = Math.floor(s);
+  if (s < 60)   return s + 's';
+  if (s < 3600) return Math.floor(s / 60) + 'm ' + (s % 60) + 's';
+  return Math.floor(s / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm ' + (s % 60) + 's';
+}
+function fmtSec(s) { return fmt(Math.max(0, s)); }
+function fmtISO(ts) {
+  try { return new Date(typeof ts === 'number' ? ts * 1000 : ts).toLocaleString(); }
+  catch(_) { return ''; }
+}
+
+// ============================================================
+// LOG CONTROLS
+// ============================================================
+function toggleLog(id) {
+  const w = document.getElementById('logwrap-' + id);
+  if (!w) return;
+  const open = w.style.display === 'none';
+  w.style.display = open ? 'block' : 'none';
+  if (open) {
+    startLogPoll(id);
+  } else {
+    stopLogPoll(id);
+  }
+}
+function clearLog(id) {
+  const el = document.getElementById('log-' + id);
+  if (el) el.innerHTML = '<div style="color:oklch(0.6 0.02 250);">Cleared</div>';
+}
+
+// ============================================================
+// STOP STREAM  —  cancels the GitHub Actions workflow run
+// ============================================================
+async function stopStream(id) {
+  const info = S.streams[id];
+  if (!info) return;
+  if (!info.run_id) {
+    // No run yet — just remove from local state
+    removeCard(id);
+    reconcile(S.streams);
+    toast('Stream removed', 'inf');
+    return;
+  }
+  if (!confirm(`Stop stream "${info.name || id}"?\n\nThis will cancel the GitHub Actions run #${info.run_id}.`)) return;
+  try {
+    const { owner, repo } = S.cfg;
+    const res = await ghFetch(
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${info.run_id}/cancel`,
+      { method: 'POST' }
+    );
+    // GitHub returns 202 Accepted
+    if (res.status === 202 || res.status === 204 || res.ok) {
+      toast('Stop signal sent to GitHub Actions', 'inf');
+      S.streams[id] = { ...info, status: 'offline', _settled: true };
+      persistStreams();
+      updateCard(S.streams[id]);
+    } else {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.message || `HTTP ${res.status}`);
+    }
+  } catch (err) {
+    toast('Stop failed: ' + err.message, 'err');
+  }
+}
+
+// ============================================================
+// DELETE STREAM
+// ============================================================
+function delStream(id) {
+  const info = S.streams[id];
+  if (!confirm(`Delete "${info ? info.name : id}"?\nThis removes it from the local dashboard only. The GitHub Actions run (if any) is not affected.`)) return;
+  removeCard(id);
+  reconcile(S.streams);
+  toast('Deleted from dashboard', 'inf');
+}
+
+// ============================================================
+// OPEN NEW STREAM DIALOG
+// ============================================================
+function openNew() {
+  if (!S.cfg || !S.cfg.token) {
+    toast('Configure GitHub settings first', 'err');
+    openCfg();
+    return;
+  }
+  S.mode   = 'new';
+  S.editId = null;
+  document.getElementById('dlg-title').textContent  = 'New Stream';
+  document.getElementById('submit-lbl').textContent  = 'Start stream';
+  document.getElementById('uploads').style.display   = 'block';
+  document.getElementById('creds').style.display     = 'block';
+  document.getElementById('tip-text').innerHTML = '<b>Tip:</b> the photo fills the time, the video plays once at the very end. Set the total minutes and the app figures out the rest.';
+  resetForm();
+  document.getElementById('dlg').showModal();
+  icons();
+}
+
+// ============================================================
+// OPEN RESTART DIALOG
+// ============================================================
+function openRestart(id) {
+  const sl = S.streams[id];
+  if (!sl) return;
+  S.mode   = 'restart';
+  S.editId = id;
+  document.getElementById('dlg-title').textContent  = 'Restart Stream';
+  document.getElementById('submit-lbl').textContent  = 'Restart stream';
+  document.getElementById('uploads').style.display   = 'none';
+  document.getElementById('creds').style.display     = 'block';
+  document.getElementById('tip-text').innerHTML = '<b>Restart:</b> a fresh GitHub Actions dispatch will be sent with the settings below. The stream key and media files from your repo are re-used automatically.';
+  resetForm();
+  document.getElementById('f-name').value    = sl.name           || '';
+  document.getElementById('f-dur').value     = sl.total_minutes  || '';
+  document.getElementById('f-ytvid').value   = sl.youtube_video_id || '';
+  document.getElementById('f-key').value     = sl.stream_key     || '';
+  document.getElementById('f-backup').value  = sl.backup_rtmp    || '';
+  setPlatform(sl.platform || 'youtube');
+  setRatio(sl.ratio || '9:16');
+  durHint();
+  document.getElementById('dlg').showModal();
+  icons();
+}
+
+function resetForm() {
+  ['f-name','f-dur','f-key','f-backup','f-start','f-stop','f-ytvid'].forEach(id => {
+    const e = document.getElementById(id);
+    if (e) e.value = '';
+  });
+  document.getElementById('f-platform').value    = 'youtube';
+  document.getElementById('f-sched').checked     = false;
+  document.getElementById('sched-panel').style.display = 'none';
+  document.getElementById('submit-btn').disabled = false;
+  setPlatform('youtube');
+  setRatio('9:16');
+  durHint();
+}
+
+function setRatio(r) {
+  S.ratio = r;
+  document.getElementById('r169').classList.toggle('on', r === '16:9');
+  document.getElementById('r916').classList.toggle('on', r === '9:16');
+  document.getElementById('ratio-hint').textContent = r === '16:9'
+    ? '1280x720 — standard YouTube / Facebook'
+    : '720x1280 — YouTube Shorts / Facebook Reels';
+}
+
+function setPlatform(p) {
+  S.platform = p;
+  document.getElementById('f-platform').value = p;
+  document.getElementById('plat-yt').classList.toggle('on', p === 'youtube');
+  document.getElementById('plat-fb').classList.toggle('on', p === 'facebook');
+  icons();
+}
+
+function durHint() {
+  const v = parseInt(document.getElementById('f-dur').value);
+  const h = document.getElementById('dur-hint');
+  if (!v || v < 2) {
+    h.className   = 'hint';
+    h.textContent = 'Photo plays first, the video plays once at the end, then the stream ends.';
+    return;
+  }
+  h.className   = 'hint ok';
+  h.textContent = v + ' min total. Video length is auto-detected by the GitHub Actions runner; the photo fills the rest.';
+}
+
+function toggleSched() {
+  document.getElementById('sched-panel').style.display =
+    document.getElementById('f-sched').checked ? 'block' : 'none';
+}
+
+// ============================================================
+// SUBMIT STREAM  —  dispatch to GitHub Actions
+// ============================================================
+async function submitStream() {
+  const btn  = document.getElementById('submit-btn');
+  const mins = parseInt(document.getElementById('f-dur').value);
+  if (!mins || mins < 2) {
+    toast('Enter total duration (minimum 2 minutes)', 'err');
+    return;
+  }
+
+  const key = document.getElementById('f-key').value.trim();
+  if (!key) {
+    toast('Stream key is required', 'err');
+    return;
+  }
+
+  let start_at = '';
+  let stop_at  = '';
+  if (document.getElementById('f-sched').checked) {
+    const sv = document.getElementById('f-start').value;
+    const ev = document.getElementById('f-stop').value;
+    if (sv) { const d = new Date(sv); if (!isNaN(d)) start_at = d.toISOString(); }
+    if (ev) { const d = new Date(ev); if (!isNaN(d) && d > new Date()) stop_at = d.toISOString(); }
+  }
+
+  const streamName = document.getElementById('f-name').value.trim() || 'Live Stream';
+  const platform   = document.getElementById('f-platform').value || 'youtube';
+  const backup     = document.getElementById('f-backup').value.trim();
+  const ytVid      = document.getElementById('f-ytvid').value.trim();
+
+  // Build the client_payload to send to GitHub
+  const payload = {
+    stream_name:      streamName,
+    stream_key:       key,
+    ratio:            S.ratio,
+    total_minutes:    mins,
+    platform:         platform,
+    backup_rtmp:      backup,
+    youtube_video_id: ytVid,
+    start_at:         start_at,
+    stop_at:          stop_at,
+  };
+
+  btn.disabled = true;
+  document.getElementById('submit-lbl').textContent = S.mode === 'restart' ? 'Restarting...' : 'Dispatching...';
+
+  try {
+    const dispatchedAt = new Date().toISOString();
+    await dispatchWorkflow(payload);
+
+    // Create local stream record
+    const id = S.mode === 'restart' && S.editId ? S.editId : genId();
+    const prevRestarts = (S.streams[id] && S.streams[id].total_restarts) || 0;
+
+    S.streams[id] = {
+      id,
+      name:             streamName,
+      ratio:            S.ratio,
+      status:           start_at ? 'scheduled' : 'starting',
+      total_minutes:    mins,
+      platform,
+      stream_key:       key,
+      backup_rtmp:      backup,
+      youtube_video_id: ytVid,
+      start_at:         start_at || null,
+      stop_at:          stop_at  || null,
+      dispatched_at:    dispatchedAt,
+      uptime_start:     start_at ? null : Date.now(),
+      run_id:           null,      // will be resolved on first poll
+      total_restarts:   S.mode === 'restart' ? prevRestarts + 1 : 0,
+      uptime:           0,
+      current_phase:    null,
+      phase_remaining:  null,
+      // Estimate timing for phase display (will be confirmed by runner)
+      photo_dur:        null,
+      video_dur:        null,
+      _settled:         false,
+    };
+
+    persistStreams();
+    reconcile(S.streams);
+    startGlobalPoll();
+
+    const lbl = start_at
+      ? `"${streamName}" scheduled`
+      : `"${streamName}" dispatching to GitHub Actions`;
+    toast(lbl, 'ok');
+    document.getElementById('dlg').close();
+
+  } catch (err) {
+    toast(err.message || 'Dispatch failed', 'err');
+  }
+
+  btn.disabled = false;
+  document.getElementById('submit-lbl').textContent = S.mode === 'restart' ? 'Restart stream' : 'Start stream';
+}
+
+// ============================================================
+// EDIT DIALOG (local metadata only)
+// ============================================================
+function openEdit(id) {
+  const sl = S.streams[id];
+  if (!sl) return;
+  S.editId = id;
+  document.getElementById('e-name').value  = sl.name             || '';
+  document.getElementById('e-dur').value   = sl.total_minutes    || '';
+  document.getElementById('e-ytvid').value = sl.youtube_video_id || '';
+  document.getElementById('e-stop').value  = sl.stop_at ? toLocalInput(sl.stop_at) : '';
+  document.getElementById('dlg-edit').showModal();
+  icons();
+}
+function toLocalInput(iso) {
+  try {
+    const d = new Date(iso);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  } catch(_) { return ''; }
+}
+function submitEdit() {
+  const id  = S.editId;
+  const sl  = S.streams[id];
+  if (!sl) return;
+
+  const nm = document.getElementById('e-name').value.trim();
+  const mn = parseInt(document.getElementById('e-dur').value);
+  const yt = document.getElementById('e-ytvid').value.trim();
+  const sv = document.getElementById('e-stop').value;
+
+  const updates = {};
+  if (nm)              updates.name             = nm;
+  if (mn && mn >= 2)   updates.total_minutes    = mn;
+  updates.youtube_video_id = yt;
+  if (sv) {
+    const d = new Date(sv);
+    if (!isNaN(d)) updates.stop_at = d.toISOString();
+  } else {
+    updates.stop_at = null;
+  }
+
+  S.streams[id] = { ...sl, ...updates };
+  persistStreams();
+  reconcile(S.streams);
+  toast('Changes applied locally', 'ok');
+  document.getElementById('dlg-edit').close();
+}
+
+// ============================================================
+// TOAST NOTIFICATIONS
+// ============================================================
+function toast(msg, type = 'inf') {
+  const c  = document.getElementById('toasts');
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  const ic = { ok: 'check-circle', err: 'alert-circle', inf: 'info' }[type] || 'info';
+  el.innerHTML = '<i data-lucide="' + ic + '"></i><span>' + esc(msg) + '</span>';
+  c.appendChild(el);
+  icons();
+  setTimeout(() => {
+    el.style.transition = 'opacity .3s var(--e-out)';
+    el.style.opacity    = '0';
+    setTimeout(() => el.remove(), 300);
+  }, 4200);
+}
+
+// ============================================================
+// UTILITIES
+// ============================================================
+function esc(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+function icons() {
+  if (window.lucide) window.lucide.createIcons();
+}
+
+// ============================================================
+// KEYBOARD SHORTCUTS
+// ============================================================
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    document.getElementById('dlg')?.close();
+    document.getElementById('dlg-edit')?.close();
+    document.getElementById('dlg-cfg')?.close();
+  }
+});
+
+// ============================================================
+// INIT
+// ============================================================
+document.addEventListener('DOMContentLoaded', () => {
+  loadCfg();
+  loadStreams();
+
+  // Show empty state or existing cards
+  reconcile(S.streams);
+
+  // If any streams are active, start polling right away
+  const hasActive = Object.values(S.streams).some(s => isActive(s.status) || s.status === 'starting');
+  if (hasActive || Object.keys(S.streams).length > 0) {
+    fetchStreams();
+    startGlobalPoll();
+  } else {
+    // Just render empty state
+    document.getElementById('empty').style.display = 'block';
+  }
+
+  // If no GitHub config at all, open the config dialog automatically once
+  if (!S.cfg || !S.cfg.token) {
+    setTimeout(() => {
+      openCfg();
+      toast('Welcome to StreamAdda v8! Configure GitHub to get started.', 'inf');
+    }, 600);
+  }
+
+  icons();
+});
+</script>
+</body>
+</html>
