@@ -1388,7 +1388,7 @@ dialog::backdrop{background:rgba(0,0,0,.25);backdrop-filter:blur(3px)}
 // ============================================================
 // CONSTANTS
 // ============================================================
-const APP_VERSION = 'v8.2';
+const APP_VERSION = 'v9.0';
 const LS_CFG      = 'sa_github_cfg_v8';     // localStorage key for GitHub config
 const LS_STREAMS  = 'sa_streams_v8';         // localStorage key for stream list
 const POLL_MS     = 8000;    // 8-second poll interval — safe from GitHub API 429
@@ -2004,28 +2004,47 @@ async function submitStream(event) {
   const ytMatch = ytvid.match(/(?:youtu\.be\/|v=)([\w-]{11})/);
   if (ytMatch) ytVideoId = ytMatch[1];
 
-  // ---- Build the client_payload (full injection) ----
-  const payload = {
-    stream_name:        name,
-    stream_key:         key,
-    platform:           S.platform,
-    ratio:              S.ratio,
-    total_minutes:      String(dur),
-    asset_mode:         S.assetMode,         // photo_only | video_only | photo_video
-    drive_mode:         String(S.driveMode), // true | false
-    photo_drive_url:    photoDriveUrl,
-    video_drive_url:    videoDriveUrl,
-    photo_filename:     photoFilename,
-    video_filename:     videoFilename,
-    ambient_audio:      String(S.ambientAudio), // true | false
-    backup_rtmp:        backup,
-    youtube_video_id:   ytVideoId,
-    start_at:           startAt,
-    stop_at:            stopAt,
+  // ============================================================
+  // BUILD THE client_payload  (v9 — 10-PROPERTY-SAFE CONTRACT)
+  //
+  // FIX FOR GitHub API 422:
+  //   "No more than 10 properties are allowed; 16 were supplied"
+  //
+  // GitHub's repository_dispatch API hard-limits client_payload to a
+  // MAXIMUM OF 10 TOP-LEVEL PROPERTIES. The old v8 build sent 16 flat
+  // fields and was rejected. v9 sends only FIVE clean top-level fields
+  // and bundles EVERY advanced option, dynamic filename, Drive URL,
+  // noise/mode flag, and schedule value into ONE compressed JSON string
+  // property: `payload_config`. This is future-proof — any number of
+  // new options can be added inside payload_config without ever again
+  // breaching the 10-property ceiling.
+  // ============================================================
+  const payloadConfig = {
+    stream_name:      name,
+    asset_mode:       S.assetMode,           // photo_only | video_only | photo_video
+    drive_mode:       String(S.driveMode),   // "true" | "false"
+    photo_filename:   photoFilename,
+    video_filename:   videoFilename,
+    photo_drive_url:  photoDriveUrl,
+    video_drive_url:  videoDriveUrl,
+    ambient_audio:    String(S.ambientAudio), // "true" | "false"
+    backup_rtmp:      backup,
+    youtube_video_id: ytVideoId,
+    start_at:         startAt,
+    stop_at:          stopAt,
   };
 
-  // ---- Persist full payload to localStorage for auditing ----
-  const formSnap = { ...payload, dispatched_at: new Date().toISOString() };
+  // Only 5 top-level fields leave the browser (well under the 10 cap).
+  const payload = {
+    stream_key:     key,
+    total_minutes:  String(dur),
+    ratio:          S.ratio,
+    platform:       S.platform,
+    payload_config: JSON.stringify(payloadConfig),
+  };
+
+  // ---- Persist full expanded payload to localStorage for auditing ----
+  const formSnap = { ...payload, config: payloadConfig, dispatched_at: new Date().toISOString() };
   localStorage.setItem('sa_last_payload', JSON.stringify(formSnap));
   saveFormToStorage();
 
