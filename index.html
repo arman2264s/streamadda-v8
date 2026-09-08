@@ -259,6 +259,7 @@ nav{
 }
 .card.is-connecting{border-color:var(--warn-bd)}
 .card.is-failed{border-color:var(--danger-bd);background:var(--danger-bg)}
+.card.is-finished{border-color:var(--ok-bd)}
 .card-body{padding:1rem 1rem .85rem}
 .card-top{
   display:flex;
@@ -354,6 +355,14 @@ nav{
   border-color:var(--border);
 }
 .b-offline .d{background:var(--muted)}
+
+/* FINISHED — green, steady (no pulse) */
+.b-finished{
+  background:var(--ok-bg);
+  color:var(--ok-text);
+  border-color:var(--ok-bd);
+}
+.b-finished .d{background:var(--ok)}
 
 /* FAILED */
 .b-failed{
@@ -1388,10 +1397,12 @@ dialog::backdrop{background:rgba(0,0,0,.25);backdrop-filter:blur(3px)}
 // ============================================================
 // CONSTANTS
 // ============================================================
-const APP_VERSION = 'v9.0';
+const APP_VERSION = 'v9.2';
 const LS_CFG      = 'sa_github_cfg_v8';     // localStorage key for GitHub config
 const LS_STREAMS  = 'sa_streams_v8';         // localStorage key for stream list
-const POLL_MS     = 8000;    // 8-second poll interval — safe from GitHub API 429
+const POLL_MS     = 8000;    // 8-second base poll interval — safe from GitHub API 429
+const POLL_MS_MAX = 60000;   // exponential-backoff ceiling on repeated failures
+const POLL_BACKOFF_FACTOR = 1.8; // multiplier applied per consecutive failure
 const FIND_RUN_RETRIES = 15; // max attempts to find the dispatched run ID
 const MAX_DURATION_MIN = 345; // hard safety cap — must match workflow clamp
 
@@ -1428,7 +1439,7 @@ document.addEventListener('DOMContentLoaded', () => {
   restoreFormDefaults();
   // Kick off pollers for any non-completed streams
   Object.values(S.streams).forEach(s => {
-    if (s.runId && !['offline','failed'].includes(s.status)) {
+    if (s.runId && !['offline','failed','finished'].includes(s.status)) {
       startPoll(s.id);
     }
   });
@@ -1467,7 +1478,7 @@ function updateCfgUI() {
   if (S.cfg && S.cfg.token && S.cfg.owner && S.cfg.repo) {
     newBtn.disabled = false;
     newBtn.title    = 'Launch new live stream via GitHub Actions';
-    status.textContent = `��� ${S.cfg.owner}/${S.cfg.repo}`;
+    status.textContent = `����� ${S.cfg.owner}/${S.cfg.repo}`;
     status.style.color = 'var(--ok)';
   } else {
     newBtn.disabled = true;
@@ -2131,6 +2142,12 @@ async function submitStream(event) {
     assetMode:      S.assetMode,
     driveMode:      S.driveMode,
     ambientAudio:   S.ambientAudio,
+    streamKey:      key,
+    backupRtmp:     backup,
+    photoFilename,
+    videoFilename,
+    photoDriveUrl,
+    videoDriveUrl,
     durationMin:    dur,
     startAt,
     stopAt,
@@ -2213,38 +2230,66 @@ function startFindRun(id, dispatchedAt) {
 //   online   → [SA_STATUS:PHASE:VIDEO]   → (updates phase badge)
 //   online   → [SA_STATUS:COMPLETE]      → offline
 // ============================================================
-function startPoll(id) {
-  if (S.polls[id]) return; // Already polling
+function stopPoll(id) {
+  if (S.polls[id]) {
+    clearTimeout(S.polls[id]);
+    S.polls[id] = null;
+  }
+}
 
-  const iv = setInterval(async () => {
+// SMART POLLER — recursive setTimeout with exponential backoff + in-flight
+// debouncing. Only ONE request is ever in flight per stream, and transient
+// network failures ("Failed to fetch"), 403 and 429 responses trigger an
+// increasing delay instead of crashing the card UI.
+function startPoll(id) {
+  if (S.polls[id]) return;               // already scheduled
+  if (S._inflight == null) S._inflight = {};
+
+  const tick = async () => {
     const s = S.streams[id];
-    if (!s) { clearInterval(iv); return; }
-    if (['offline','failed'].includes(s.status)) {
-      clearInterval(iv);
-      S.polls[id] = null;
+    if (!s) { stopPoll(id); return; }
+    if (['offline','failed','finished'].includes(s.status)) { stopPoll(id); return; }
+
+    if (S._inflight[id]) {               // debounce: previous request still running
+      S.polls[id] = setTimeout(tick, POLL_MS);
       return;
     }
 
+    S._inflight[id] = true;
     s.lastPollAt = new Date().toISOString();
-
+    let nextDelay = POLL_MS;
     try {
       await pollStep(id);
-      s.pollFailCount = 0;
+      s.pollFailCount = 0;               // success resets backoff
     } catch(err) {
       s.pollFailCount = (s.pollFailCount || 0) + 1;
-      if (err.message && err.message.includes('429')) {
-        // Back off on rate limit — skip next poll cycle
-        addLog(id, '⚠ GitHub API rate limit (429) — backing off one cycle');
-        await delay(POLL_MS);
+      const msg = err && err.message ? err.message : String(err);
+      const rateLimited = msg.includes('429') || msg.includes('403');
+      const netFail = msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('load failed');
+      nextDelay = Math.min(POLL_MS_MAX, Math.round(POLL_MS * Math.pow(POLL_BACKOFF_FACTOR, s.pollFailCount)));
+      if (rateLimited) {
+        addLog(id, `⚠ GitHub API limit (${msg.includes('429') ? '429' : '403'}) — backing off ${Math.round(nextDelay/1000)}s`);
+      } else if (netFail) {
+        addLog(id, `⚠ Network hiccup — retrying in ${Math.round(nextDelay/1000)}s (attempt ${s.pollFailCount})`);
       } else {
-        addLog(id, `⚠ Poll error (${s.pollFailCount}): ${err.message}`);
+        addLog(id, `⚠ Poll error (${s.pollFailCount}): ${msg} — retry in ${Math.round(nextDelay/1000)}s`);
       }
+    } finally {
+      S._inflight[id] = false;
     }
+
     persistStreams();
     renderCard(id);
-  }, POLL_MS);
 
-  S.polls[id] = iv;
+    const cur = S.streams[id];
+    if (cur && !['offline','failed','finished'].includes(cur.status)) {
+      S.polls[id] = setTimeout(tick, nextDelay);
+    } else {
+      stopPoll(id);
+    }
+  };
+
+  S.polls[id] = setTimeout(tick, POLL_MS);
 }
 
 async function pollStep(id) {
@@ -2257,10 +2302,19 @@ async function pollStep(id) {
 
   // If run is complete, mark stream ended
   if (run.conclusion && ['success','failure','cancelled','timed_out'].includes(run.conclusion)) {
-    if (s.status !== 'offline' && s.status !== 'failed') {
-      s.status = run.conclusion === 'failure' ? 'failed' : 'offline';
-      s.phase  = 'done';
-      addLog(id, `🏁 Run concluded: ${run.conclusion}`);
+    if (!['offline','failed','finished'].includes(s.status)) {
+      if (run.conclusion === 'failure') {
+        // Only a genuine setup/engine error is a FAILURE.
+        s.status = 'failed';
+        s.phase  = 'failed';
+      } else {
+        // success / cancelled / timed_out => the stream simply FINISHED.
+        s.status = 'finished';
+        s.phase  = 'done';
+      }
+      stopTimer(id);
+      addLog(id, `🏁 Run concluded: ${run.conclusion} → ${s.status.toUpperCase()}`);
+      if (s.status === 'finished') toast(`${s.name} finished`, 'ok');
     }
     return;
   }
@@ -2302,10 +2356,14 @@ function parseStatusMarkers(id, logText) {
   // [SA_STATUS:CONNECTING] — initial state (no change needed, already 'starting')
 
   // [SA_STATUS:HANDSHAKE_OK] — RTMP handshake confirmed, NOW safe to go ONLINE
-  if (logText.includes('[SA_STATUS:HANDSHAKE_OK]') && s.status === 'starting') {
+  // Go LIVE on HANDSHAKE_OK, STREAMING, or any explicit mode marker.
+  const liveSignal = ['[SA_STATUS:HANDSHAKE_OK]','[SA_STATUS:STREAMING]',
+                      '[SA_STATUS:PHOTO_VIDEO]','[SA_STATUS:PHOTO_ONLY]','[SA_STATUS:VIDEO_ONLY]']
+                      .some(m => logText.includes(m));
+  if (liveSignal && (s.status === 'starting' || s.status === 'scheduled')) {
     s.status     = 'online';
-    s.phase      = 'photo'; // default; phase marker updates it
-    s.startedAt  = new Date().toISOString();
+    s.phase      = s.assetMode === 'video_only' ? 'video' : 'photo';
+    s.startedAt  = s.startedAt || new Date().toISOString();
     startTimer(id);
     addLog(id, '🟢 RTMP handshake confirmed — stream is LIVE');
     toast(`${s.name} is now LIVE!`, 'ok');
@@ -2340,15 +2398,17 @@ function parseStatusMarkers(id, logText) {
 
   // [SA_STATUS:WATCHDOG_TIMEOUT] — stream ended by duration cap
   if (logText.includes('[SA_STATUS:WATCHDOG_TIMEOUT]') && s.status === 'online') {
-    s.status = 'offline';
+    s.status = 'finished';
     s.phase  = 'done';
+    stopTimer(id);
     addLog(id, '⏱ Stream ended by watchdog (duration reached)');
   }
 
   // [SA_STATUS:COMPLETE] — clean stream completion
-  if (logText.includes('[SA_STATUS:COMPLETE]') && !['offline','failed'].includes(s.status)) {
-    s.status = 'offline';
+  if (logText.includes('[SA_STATUS:COMPLETE]') && !['failed','finished'].includes(s.status)) {
+    s.status = 'finished';
     s.phase  = 'done';
+    stopTimer(id);
     addLog(id, '✅ Stream completed successfully');
   }
 }
@@ -2378,7 +2438,7 @@ function stopStream(id) {
   s.status = 'offline';
   s.phase  = 'done';
   stopTimer(id);
-  if (S.polls[id])    { clearInterval(S.polls[id]);    S.polls[id]    = null; }
+  stopPoll(id);
   if (S.findJobs[id]) { clearInterval(S.findJobs[id]); S.findJobs[id] = null; }
   addLog(id, `[${ts()}] Manually marked offline by user`);
   persistStreams();
@@ -2391,7 +2451,7 @@ function stopStream(id) {
 function deleteStream(id) {
   if (!confirm('Remove this stream card?')) return;
   stopTimer(id);
-  if (S.polls[id])    { clearInterval(S.polls[id]);    delete S.polls[id]; }
+  stopPoll(id);
   if (S.findJobs[id]) { clearInterval(S.findJobs[id]); delete S.findJobs[id]; }
   delete S.streams[id];
   persistStreams();
@@ -2417,15 +2477,132 @@ function submitEdit(event) {
   const id = S.editId;
   if (!id || !S.streams[id]) { document.getElementById('dlg-edit').close(); return; }
   const s = S.streams[id];
+  const prevDur = s.durationMin;
   s.name        = document.getElementById('e-name').value.trim() || s.name;
-  s.durationMin = Math.min(MAX_DURATION_MIN, parseInt(document.getElementById('e-dur').value,10) || s.durationMin);
+  const newDur  = Math.min(MAX_DURATION_MIN, parseInt(document.getElementById('e-dur').value,10) || s.durationMin);
+  s.durationMin = Math.max(2, newDur);
   s.ytVideoId   = document.getElementById('e-ytvid').value.trim();
   const stopVal = document.getElementById('e-stop').value;
   s.stopAt      = stopVal ? new Date(stopVal).toISOString() : '';
   persistStreams();
-  renderAll();
   document.getElementById('dlg-edit').close();
-  toast('Stream updated', 'ok');
+
+  const active = ['online','starting','scheduled'].includes(s.status);
+  const durationChanged = s.durationMin !== prevDur;
+  if (active && durationChanged) {
+    // Live duration change: cancel the current run and re-dispatch with the
+    // new duration under the SAME card identity (no duplicate/orphan card).
+    toast(`Applying new duration (${s.durationMin} min)…`, 'inf');
+    dispatchForExistingStream(id).catch(err => {
+      addLog(id, `⚠ Duration update failed: ${err.message}`);
+      toast(`Duration update failed: ${err.message}`, 'err');
+    });
+  } else {
+    renderAll();
+    toast('Stream updated', 'ok');
+  }
+}
+
+// ============================================================
+// LIVE DURATION / RESTART CONTROL
+// cancelRun -> re-dispatch under the SAME card identity.
+// ============================================================
+async function cancelRun(runId) {
+  if (!runId) return false;
+  const { owner, repo } = S.cfg;
+  try {
+    const res = await ghFetch(
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/cancel`,
+      { method: 'POST' }
+    );
+    // 202 Accepted = cancellation queued; 409 = already complete (fine).
+    return res.status === 202 || res.status === 409;
+  } catch(_) {
+    return false;
+  }
+}
+
+// Rebuild the exact client_payload bundle for an existing stream object.
+function buildConfigBundle(s) {
+  const configBundle = {
+    stream_key:      s.streamKey || '',
+    total_minutes:   String(s.durationMin || 60),
+    ratio:           s.ratio,
+    platform:        s.platform,
+    asset_mode:      s.assetMode,
+    drive_mode:      String(!!s.driveMode),
+    photo_filename:  s.photoFilename || 'live_photo.jpg',
+    video_filename:  s.videoFilename || 'live_video.mp4',
+    photo_drive_url: s.photoDriveUrl || '',
+    video_drive_url: s.videoDriveUrl || '',
+    ambient_audio:   String(!!s.ambientAudio),
+    stream_name:      s.name,
+    backup_rtmp:      s.backupRtmp || '',
+    youtube_video_id: s.ytVideoId || '',
+    start_at:         '',
+    stop_at:          s.stopAt || '',
+  };
+  return { payload_config: JSON.stringify(configBundle) };
+}
+
+// Cancel the current run (if any) and re-dispatch the SAME card with its
+// current parameters. Used for both live duration edits and restarts.
+async function dispatchForExistingStream(id) {
+  const s = S.streams[id];
+  if (!s) return;
+  if (!s.streamKey) {
+    throw new Error('Stream key not stored on this card — recreate it once to enable live edits/restart.');
+  }
+  // 1) Cancel the in-flight run (best-effort).
+  if (s.runId) {
+    addLog(id, `⏹ Cancelling run #${s.runId}…`);
+    const ok = await cancelRun(s.runId);
+    addLog(id, ok ? '⏹ Cancel request accepted.' : '⏹ Cancel skipped (run may already be finished).');
+  }
+  // 2) Reset live counters / run identity — keep the SAME card id.
+  stopPoll(id);
+  if (S.findJobs[id]) { clearInterval(S.findJobs[id]); S.findJobs[id] = null; }
+  stopTimer(id);
+  const dispatchedAt = new Date().toISOString();
+  s.runId        = null;
+  s.runUrl       = null;
+  s.jobId        = null;
+  s.startedAt    = null;
+  s.frameCount   = 0;
+  s.pollFailCount = 0;
+  s.dispatchedAt = dispatchedAt;
+  s.status       = 'starting';
+  s.phase        = 'connecting';
+  addLog(id, `♻ Re-dispatching with duration ${s.durationMin} min…`);
+  persistStreams();
+  renderCard(id);
+  // 3) Re-dispatch a fresh repository_dispatch event.
+  await dispatchWorkflow(buildConfigBundle(s));
+  addLog(id, '✅ Re-dispatched — searching for the new run…');
+  // 4) Locate the new run and resume polling under the same identity.
+  startFindRun(id, dispatchedAt);
+  scanRepoAssets();
+}
+
+// Restart a completed / stopped / failed card under the SAME identity.
+async function restartStream(id) {
+  const s = S.streams[id];
+  if (!s) return;
+  if (!s.streamKey) {
+    toast('This card predates restart support — recreate it once to enable Restart.', 'warn');
+    return;
+  }
+  toast(`Restarting ${s.name}…`, 'inf');
+  try {
+    await dispatchForExistingStream(id);
+  } catch(err) {
+    addLog(id, `⚠ Restart failed: ${err.message}`);
+    toast(`Restart failed: ${err.message}`, 'err');
+    s.status = 'failed';
+    s.phase  = 'failed';
+    persistStreams();
+    renderCard(id);
+  }
 }
 
 // ============================================================
@@ -2586,6 +2763,11 @@ function buildCard(id) {
              <i data-lucide="square" style="width:11px;height:11px"></i> Stop
            </button>`
         : ''}
+      ${['finished','offline','failed'].includes(s.status)
+        ? `<button class="btn btn-primary btn-sm" onclick="restartStream('${id}')">
+             <i data-lucide="rotate-ccw" style="width:11px;height:11px"></i> Restart
+           </button>`
+        : ''}
       <button class="btn btn-ghost btn-sm" onclick="openEdit('${id}')">
         <i data-lucide="pencil" style="width:11px;height:11px"></i> Edit
       </button>
@@ -2623,6 +2805,7 @@ function badgeHtml(s) {
     starting:  { cls:'b-starting',  dot:true,  label:'CONNECTING' },
     scheduled: { cls:'b-scheduled', dot:false, label:'SCHEDULED' },
     offline:   { cls:'b-offline',   dot:false, label:'OFFLINE' },
+    finished:  { cls:'b-finished',  dot:false, label:'FINISHED' },
     failed:    { cls:'b-failed',    dot:true,  label:'FAILED' },
   };
   if (s.status === 'online' && s.phase === 'video') {
@@ -2642,6 +2825,7 @@ function statusCardClass(status) {
   if (status === 'online')   return 'is-live';
   if (status === 'starting') return 'is-connecting';
   if (status === 'failed')   return 'is-failed';
+  if (status === 'finished') return 'is-finished';
   return '';
 }
 
