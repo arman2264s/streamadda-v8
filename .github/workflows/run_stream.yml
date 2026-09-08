@@ -783,6 +783,17 @@ jobs:
         id: ffmpeg_stream
         shell: bash
         run: |
+          # ============================================================
+          # RESILIENCE POLICY
+          # We manage every error explicitly and ALWAYS exit 0 at the end
+          # so Step 8 (clean teardown) runs and GitHub marks the job as
+          # SUCCESS for normal timed streams. Disabling -e/-o pipefail is
+          # required because grep/ps in the monitor legitimately return
+          # non-zero (no-match) and MUST NOT abort the step.
+          # ============================================================
+          set +e
+          set +o pipefail
+
           RTMP_URL="${{ steps.params.outputs.rtmp_url }}"
           RTMP_BASE="${{ steps.params.outputs.rtmp_base }}"
           WIDTH="${{ steps.params.outputs.width }}"
@@ -798,160 +809,98 @@ jobs:
           VIDEO_DUR_NOISE="${{ steps.timing.outputs.video_dur_noise }}"
           TOTAL_SECONDS="${{ steps.timing.outputs.total_seconds }}"
           HAS_AUDIO="${{ steps.timing.outputs.has_audio }}"
+          export STOP_AT
 
           FFMPEG_LOG="/tmp/ffmpeg_stderr.log"
+          PID_FILE="/tmp/ffmpeg_current.pid"
+          DONE_FILE="/tmp/sa_stream_done"
+          FAIL_FILE="/tmp/sa_setup_failed"
+          rm -f "$PID_FILE" "$DONE_FILE" "$FAIL_FILE"
+          : > "$FFMPEG_LOG"
           FFMPEG_EXIT=0
 
-          # ---- Audio sources ----
+          ASSET_MODE_UPPER=$(printf '%s' "$ASSET_MODE" | tr '[:lower:]' '[:upper:]')
+          if [ "$ASSET_MODE" = "video_only" ]; then INITIAL_PHASE="VIDEO"; else INITIAL_PHASE="PHOTO"; fi
+
           QUIET_NOISE="anoisesrc=r=44100:amplitude=0.001:color=white"
           AMBIENT_NOISE="anoisesrc=r=44100:amplitude=0.09:color=pink,lowpass=f=400,highpass=f=40,volume=1.6,aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100"
-
           if [ "$AMBIENT_AUDIO" = "true" ]; then
-            PHOTO_AUDIO_SRC="$AMBIENT_NOISE"
-            echo "🔊 [SA] Ambient traffic audio ENABLED."
+            PHOTO_AUDIO_SRC="$AMBIENT_NOISE"; echo "[SA] Ambient traffic audio ENABLED."
           else
-            PHOTO_AUDIO_SRC="$QUIET_NOISE"
-            echo "🔊 [SA] Standard quiet noise floor (-60 dB)."
+            PHOTO_AUDIO_SRC="$QUIET_NOISE"; echo "[SA] Standard quiet noise floor."
           fi
 
-          vf_template() {
-            local IN="$1" OUT="$2"
-            echo "[${IN}]scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease,pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=30,format=yuv420p[${OUT}]"
-          }
+          vf_template() { local IN="$1" OUT="$2"; echo "[${IN}]scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease,pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=30,format=yuv420p[${OUT}]"; }
+          af_template() { local IN="$1" OUT="$2"; echo "[${IN}]aresample=async=1:first_pts=0,aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100[${OUT}]"; }
 
-          af_template() {
-            local IN="$1" OUT="$2"
-            echo "[${IN}]aresample=async=1:first_pts=0,aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100[${OUT}]"
-          }
-
-          # ---- Calculate hard-deadline watchdog timeout ----
-          TIMEOUT_SECONDS=$(( TOTAL_SECONDS + 8 ))
-
+          # ---- Duration model (second-accurate). stop_at wins if earlier ----
+          TARGET_SECONDS="$TOTAL_SECONDS"
           if [ -n "$STOP_AT" ]; then
-            STOP_SECS=$(python3 - <<PYEOF
-          import datetime, sys
+            STOP_SECS=$(python3 - <<'PYEOF'
+          import datetime, os
+          s = os.environ.get("STOP_AT", "").strip()
           try:
-              s = "${STOP_AT}".strip()
-              if s.endswith('Z'): s = s[:-1] + '+00:00'
+              if s.endswith("Z"): s = s[:-1] + "+00:00"
               t = datetime.datetime.fromisoformat(s)
               if t.tzinfo is None: t = t.replace(tzinfo=datetime.timezone.utc)
               now = datetime.datetime.now(datetime.timezone.utc)
               print(max(0, int((t - now).total_seconds())))
-          except: print(-1)
+          except Exception:
+              print(-1)
           PYEOF
           )
-            if [ "$STOP_SECS" -gt 0 ] && [ "$STOP_SECS" -lt "$TIMEOUT_SECONDS" ]; then
-              echo "⏰ [SA] Hard stop_at deadline is earlier: ${STOP_SECS}s from now."
-              TIMEOUT_SECONDS="$STOP_SECS"
+            if [ "$STOP_SECS" -gt 0 ] && [ "$STOP_SECS" -lt "$TARGET_SECONDS" ]; then
+              echo "[SA] Hard stop_at deadline is earlier: ${STOP_SECS}s from now."
+              TARGET_SECONDS="$STOP_SECS"
             fi
           fi
+          HARD_TIMEOUT=$(( TARGET_SECONDS + 8 ))
+          START_EPOCH=$(date +%s)
+          END_TARGET_EPOCH=$(( START_EPOCH + TARGET_SECONDS ))
+          END_HARD_EPOCH=$(( START_EPOCH + HARD_TIMEOUT ))
 
           echo ""
-          echo "🚀 [SA] ══════════════════════════════════════════════"
-          echo "🚀 [SA]  LAUNCHING ADAPTIVE FFMPEG STREAMING SESSION"
-          echo "🚀 [SA] ══════════════════════════════════════════════"
-          printf "🚀 [SA]  Platform    : %s | %s | %sx%s\n" "$PLATFORM" "$RATIO" "$WIDTH" "$HEIGHT"
-          printf "🚀 [SA]  Asset mode  : %s\n" "$ASSET_MODE"
-          printf "🚀 [SA]  Photo phase : %ss\n" "$PHOTO_DUR"
-          printf "🚀 [SA]  Video phase : %ss (audio: %s)\n" "$VIDEO_DUR_INT" "$HAS_AUDIO"
-          printf "🚀 [SA]  Watchdog    : %ss\n" "$TIMEOUT_SECONDS"
-          printf "🚀 [SA]  Ambient     : %s\n" "$AMBIENT_AUDIO"
-          printf "🚀 [SA]  RTMP target : %s****\n" "$RTMP_BASE"
-          echo "🚀 [SA] ══════════════════════════════════════════════"
+          echo "[SA] LAUNCHING ADAPTIVE FFMPEG STREAMING SESSION"
+          printf "[SA]  Platform     : %s | %s | %sx%s\n" "$PLATFORM" "$RATIO" "$WIDTH" "$HEIGHT"
+          printf "[SA]  Asset mode   : %s\n" "$ASSET_MODE"
+          printf "[SA]  Photo phase  : %ss\n" "$PHOTO_DUR"
+          printf "[SA]  Video phase  : %ss (audio: %s)\n" "$VIDEO_DUR_INT" "$HAS_AUDIO"
+          printf "[SA]  Target dur   : %ss (hard cap %ss)\n" "$TARGET_SECONDS" "$HARD_TIMEOUT"
+          printf "[SA]  Ambient      : %s\n" "$AMBIENT_AUDIO"
+          printf "[SA]  RTMP target  : %s****\n" "$RTMP_BASE"
           echo ""
-
           echo "[SA_STATUS:CONNECTING]"
 
-          # ==============================================================
-          # BACKGROUND CONNECTION MONITOR
-          # Reads FFmpeg stderr log every 5s and emits [SA_STATUS:...]
-          # markers that the frontend poller uses to update the UI.
-          # ==============================================================
-          monitor_ffmpeg() {
-            local LOG="$1"
-            local FFMPEG_PID="$2"
-            local CONNECTED=false
-            local LAST_FRAME=0
-            local CHECK_COUNT=0
-
-            while kill -0 "$FFMPEG_PID" 2>/dev/null; do
-              sleep 5
-              CHECK_COUNT=$(( CHECK_COUNT + 1 ))
-              [ ! -f "$LOG" ] && continue
-
-              if grep -qiE \
-                'connection refused|connection timed out|no route to host|failed to connect|connection reset|error opening|could not write header|handshake failed|403 forbidden|401 unauthorized|invalid argument|server returned|code=403|code=401|RTMP_Connect.*fail|NetStream.Publish.BadName|NetConnection.Connect.Rejected' \
-                "$LOG" 2>/dev/null; then
-                  FAIL_LINE=$(grep -imE \
-                    'connection refused|timed out|failed to connect|reset|error opening|could not write|handshake|403|401|invalid|BadName|Rejected' \
-                    "$LOG" | tail -1 | sed 's/^[[:space:]]*//' | cut -c1-140)
-                  echo "[SA_STATUS:FAILED:${FAIL_LINE}]"
-                  return
-              fi
-
-              if ! $CONNECTED; then
-                if grep -qE 'Output #0|frame=\s*[1-9]' "$LOG" 2>/dev/null; then
-                  CONNECTED=true
-                  echo "[SA_STATUS:HANDSHAKE_OK]"
-                  echo "[SA_STATUS:PHASE:PHOTO]"
-                fi
-              fi
-
-              if $CONNECTED && [ $(( CHECK_COUNT % 3 )) -eq 0 ]; then
-                FRAME=$(grep -oP '(?<=frame=\s{0,6})\d+' "$LOG" | tail -1)
-                if [ -n "$FRAME" ] && [ "$FRAME" != "$LAST_FRAME" ]; then
-                  echo "[SA_STATUS:FRAME_COUNT:${FRAME}]"
-                  LAST_FRAME="$FRAME"
-                fi
-              fi
-
-            done
-          }
-
-          # ── Shared FFmpeg output tail (codec + RTMP reconnect flags) ──
+          # ---- Shared FFmpeg launcher: streams exactly $STREAM_CUT s then exits 0 ----
           run_ffmpeg_with_args() {
-            ffmpeg \
-              -hide_banner -y \
+            ffmpeg -hide_banner -y \
               "$@" \
-              -c:v libx264 \
-              -preset veryfast \
-              -tune zerolatency \
-              -profile:v main \
-              -level:v 4.0 \
-              -b:v 2500k \
-              -minrate 2500k \
-              -maxrate 2500k \
-              -bufsize 5000k \
-              -pix_fmt yuv420p \
-              -r 30 \
-              -g 60 \
-              -keyint_min 60 \
-              -sc_threshold 0 \
-              -x264opts no-scenecut \
-              -c:a aac \
-              -b:a 128k \
-              -ar 44100 \
-              -ac 2 \
+              -t "${STREAM_CUT}" \
+              -c:v libx264 -preset veryfast -tune zerolatency \
+              -profile:v main -level:v 4.0 \
+              -b:v 2500k -minrate 2500k -maxrate 2500k -bufsize 5000k \
+              -pix_fmt yuv420p -r 30 -g 60 -keyint_min 60 -sc_threshold 0 -x264opts no-scenecut \
+              -c:a aac -b:a 128k -ar 44100 -ac 2 \
               -max_muxing_queue_size 1024 \
-              -f flv \
-              -flvflags no_duration_filesize \
+              -fflags +genpts \
+              -f flv -flvflags no_duration_filesize \
               -rw_timeout 15000000 \
-              -reconnect 1 \
-              -reconnect_at_eof 1 \
-              -reconnect_streamed 1 \
-              -reconnect_delay_max 5 \
-              "${RTMP_URL}" \
-            2>>"$FFMPEG_LOG"
+              -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 \
+              "${RTMP_URL}" >>"$FFMPEG_LOG" 2>&1 &
+            local P=$!
+            echo "$P" > "$PID_FILE"
+            wait "$P"
+            return $?
           }
 
-          # ==============================================================
-          # MODE A: PHOTO + VIDEO (Sequential concat)
-          # ==============================================================
+          # ---- MODE A: PHOTO + VIDEO (single continuous concat pipe) ----
+          # FIX: no-audio substitute silence is now exactly VIDEO_DUR_INT
+          # (was VIDEO_DUR_INT+2, which froze ~2s and stalled the handoff);
+          # +genpts keeps timestamps monotonic across the concat boundary.
           run_photo_video_mode() {
             local VFILTER_PHOTO; VFILTER_PHOTO=$(vf_template "0:v" "v0")
             local VFILTER_VIDEO; VFILTER_VIDEO=$(vf_template "2:v" "v1")
             local AFILTER_PHOTO; AFILTER_PHOTO=$(af_template "1:a" "a0")
-
             if [ "$HAS_AUDIO" = "true" ]; then
               local FC="${VFILTER_PHOTO};${VFILTER_VIDEO};${AFILTER_PHOTO};[2:a]aresample=async=1:first_pts=0,aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100[a1];[v0][a0][v1][a1]concat=n=2:v=1:a=1[vout][aout]"
               run_ffmpeg_with_args \
@@ -966,116 +915,212 @@ jobs:
                 -re -loop 1 -framerate 30 -t "${PHOTO_DUR}" -i live_photo.jpg \
                 -f lavfi -t "${PHOTO_DUR}" -i "${PHOTO_AUDIO_SRC}" \
                 -re -i live_video.mp4 \
-                -f lavfi -t "${VIDEO_DUR_NOISE}" -i "${QUIET_NOISE}" \
+                -f lavfi -t "${VIDEO_DUR_INT}" -i "${QUIET_NOISE}" \
                 -filter_complex "${FC}" \
                 -map "[vout]" -map "[aout]"
             fi
           }
 
-          # ==============================================================
-          # MODE B: PHOTO ONLY
-          # ==============================================================
+          # ---- MODE B: PHOTO ONLY ----
           run_photo_only_mode() {
             local VFILTER; VFILTER=$(vf_template "0:v" "vout")
             local AFILTER; AFILTER=$(af_template "1:a" "aout")
-            local FC="${VFILTER};${AFILTER}"
-            echo "📸 [SA] PHOTO ONLY mode: looping photo for ${TOTAL_SECONDS}s"
+            echo "[SA] PHOTO ONLY mode: looping photo."
             run_ffmpeg_with_args \
               -re -loop 1 -framerate 30 -t "${TOTAL_SECONDS}" -i live_photo.jpg \
               -f lavfi -t "${TOTAL_SECONDS}" -i "${PHOTO_AUDIO_SRC}" \
-              -filter_complex "${FC}" \
+              -filter_complex "${VFILTER};${AFILTER}" \
               -map "[vout]" -map "[aout]"
           }
 
-          # ==============================================================
-          # MODE C: VIDEO ONLY (infinite loop, killed by watchdog)
-          # ==============================================================
+          # ---- MODE C: VIDEO ONLY (infinite loop, cut by output -t) ----
           run_video_only_mode() {
-            echo "🎬 [SA] VIDEO ONLY mode: looping video for ${TOTAL_SECONDS}s"
+            echo "[SA] VIDEO ONLY mode: looping video."
             local VFILTER; VFILTER=$(vf_template "0:v" "vout")
-
             if [ "$HAS_AUDIO" = "true" ]; then
               local AFILTER; AFILTER=$(af_template "0:a" "aout")
-              local FC="${VFILTER};${AFILTER}"
               run_ffmpeg_with_args \
                 -stream_loop -1 -re -i live_video.mp4 \
-                -filter_complex "${FC}" \
-                -map "[vout]" -map "[aout]" \
-                -t "${TOTAL_SECONDS}"
+                -filter_complex "${VFILTER};${AFILTER}" \
+                -map "[vout]" -map "[aout]"
             else
               local AFILTER; AFILTER=$(af_template "1:a" "aout")
-              local FC="${VFILTER};${AFILTER}"
               run_ffmpeg_with_args \
                 -stream_loop -1 -re -i live_video.mp4 \
-                -f lavfi -t "${TOTAL_SECONDS}" -i "${PHOTO_AUDIO_SRC}" \
-                -filter_complex "${FC}" \
-                -map "[vout]" -map "[aout]" \
-                -t "${TOTAL_SECONDS}"
+                -f lavfi -i "${PHOTO_AUDIO_SRC}" \
+                -filter_complex "${VFILTER};${AFILTER}" \
+                -map "[vout]" -map "[aout]"
             fi
           }
 
-          # ==============================================================
-          # LAUNCH: Watchdog + Monitor + FFmpeg
-          # ==============================================================
-          touch "$FFMPEG_LOG"
+          # ---- FILL MODE: watchdog auto-restart after an early drop ----
+          run_fill_mode() {
+            local VFILTER AFILTER
+            if [ "$ASSET_MODE" = "photo_only" ]; then
+              VFILTER=$(vf_template "0:v" "vout"); AFILTER=$(af_template "1:a" "aout")
+              run_ffmpeg_with_args \
+                -re -loop 1 -framerate 30 -i live_photo.jpg \
+                -f lavfi -i "${PHOTO_AUDIO_SRC}" \
+                -filter_complex "${VFILTER};${AFILTER}" \
+                -map "[vout]" -map "[aout]"
+            else
+              VFILTER=$(vf_template "0:v" "vout")
+              if [ "$HAS_AUDIO" = "true" ]; then
+                AFILTER=$(af_template "0:a" "aout")
+                run_ffmpeg_with_args \
+                  -stream_loop -1 -re -i live_video.mp4 \
+                  -filter_complex "${VFILTER};${AFILTER}" \
+                  -map "[vout]" -map "[aout]"
+              else
+                AFILTER=$(af_template "1:a" "aout")
+                run_ffmpeg_with_args \
+                  -stream_loop -1 -re -i live_video.mp4 \
+                  -f lavfi -i "${PHOTO_AUDIO_SRC}" \
+                  -filter_complex "${VFILTER};${AFILTER}" \
+                  -map "[vout]" -map "[aout]"
+              fi
+            fi
+          }
 
-          case "$ASSET_MODE" in
-            photo_video) run_photo_video_mode & ;;
-            photo_only)  run_photo_only_mode  & ;;
-            video_only)  run_video_only_mode  & ;;
-            *)
-              echo "[SA_STATUS:FAILED:Unknown asset_mode: ${ASSET_MODE}]"
-              exit 1
-              ;;
-          esac
-          FFMPEG_PID=$!
+          # ---- Hard-deadline killer (backup watchdog) ----
+          deadline_killer() {
+            while [ ! -f "$DONE_FILE" ]; do
+              local NOW; NOW=$(date +%s)
+              if [ "$NOW" -ge "$END_HARD_EPOCH" ]; then
+                echo "[SA_STATUS:WATCHDOG_TIMEOUT]"
+                echo "[SA] Hard deadline (${HARD_TIMEOUT}s) reached. Stopping FFmpeg."
+                if [ -f "$PID_FILE" ]; then
+                  local P; P=$(cat "$PID_FILE" 2>/dev/null)
+                  if [ -n "$P" ]; then
+                    kill -TERM "$P" 2>/dev/null
+                    sleep 8
+                    kill -9 "$P" 2>/dev/null
+                  fi
+                fi
+                return
+              fi
+              sleep 2
+            done
+          }
 
-          monitor_ffmpeg "$FFMPEG_LOG" "$FFMPEG_PID" &
-          MONITOR_PID=$!
+          # ---- Background monitor: UI markers + CPU/MEM health (no lookbehind) ----
+          monitor_stream() {
+            local CONNECTED=false LAST_FRAME=0 CHECK=0 VIDEO_PHASE=false
+            while [ ! -f "$DONE_FILE" ]; do
+              sleep 5
+              CHECK=$(( CHECK + 1 ))
+              [ -f "$FFMPEG_LOG" ] || continue
+              if ! $CONNECTED; then
+                if grep -qiE 'connection refused|connection timed out|no route to host|failed to connect|error opening|could not write header|handshake failed|403 forbidden|401 unauthorized|invalid stream key|netstream\.publish\.badname|netconnection\.connect\.rejected' "$FFMPEG_LOG" 2>/dev/null; then
+                  FAIL_LINE=$(grep -iE 'connection refused|timed out|failed to connect|error opening|could not write|handshake|403|401|invalid stream key|badname|rejected' "$FFMPEG_LOG" | tail -1 | sed 's/^[[:space:]]*//' | cut -c1-140)
+                  echo "[SA_STATUS:FAILED:${FAIL_LINE}]"
+                  touch "$FAIL_FILE"
+                  return
+                fi
+              fi
+              if ! $CONNECTED; then
+                if grep -qE 'Output #0|frame=[[:space:]]*[1-9]' "$FFMPEG_LOG" 2>/dev/null; then
+                  CONNECTED=true
+                  echo "[SA_STATUS:HANDSHAKE_OK]"
+                  echo "[SA_STATUS:STREAMING]"
+                  echo "[SA_STATUS:${ASSET_MODE_UPPER}]"
+                  echo "[SA_STATUS:PHASE:${INITIAL_PHASE}]"
+                fi
+              fi
+              if $CONNECTED && [ "$ASSET_MODE" = "photo_video" ] && ! $VIDEO_PHASE; then
+                local NOW EL; NOW=$(date +%s); EL=$(( NOW - START_EPOCH ))
+                if [ "$EL" -ge "$PHOTO_DUR" ]; then
+                  VIDEO_PHASE=true
+                  echo "[SA_STATUS:PHASE:VIDEO]"
+                fi
+              fi
+              if $CONNECTED && [ $(( CHECK % 3 )) -eq 0 ]; then
+                FRAME=$(grep -oE 'frame=[[:space:]]*[0-9]+' "$FFMPEG_LOG" | tail -1 | grep -oE '[0-9]+' | tail -1)
+                if [ -n "$FRAME" ] && [ "$FRAME" != "$LAST_FRAME" ]; then
+                  echo "[SA_STATUS:FRAME_COUNT:${FRAME}]"
+                  LAST_FRAME="$FRAME"
+                fi
+              fi
+              if [ $(( CHECK % 2 )) -eq 0 ] && [ -f "$PID_FILE" ]; then
+                local P; P=$(cat "$PID_FILE" 2>/dev/null)
+                if [ -n "$P" ] && kill -0 "$P" 2>/dev/null; then
+                  STAT=$(ps -o %cpu=,%mem=,rss= -p "$P" 2>/dev/null | tr -s ' ' | sed 's/^ //')
+                  [ -n "$STAT" ] && echo "[SA] FFmpeg pid ${P} health (cpu% mem% rssKB): ${STAT}"
+                fi
+              fi
+            done
+          }
 
-          (
-            sleep "${TIMEOUT_SECONDS}"
-            echo "[SA_STATUS:WATCHDOG_TIMEOUT]"
-            echo "⏱ [SA] Watchdog fired after ${TIMEOUT_SECONDS}s. Sending SIGTERM to FFmpeg PID ${FFMPEG_PID}."
-            kill -TERM "$FFMPEG_PID" 2>/dev/null
-            sleep 10
-            kill -9 "$FFMPEG_PID" 2>/dev/null
-          ) &
-          WATCHDOG_PID=$!
+          # ---- Launch supervisor: run mode, auto-restart on early drop ----
+          deadline_killer & KILLER_PID=$!
+          monitor_stream  & MONITOR_PID=$!
 
-          wait "$FFMPEG_PID" || FFMPEG_EXIT=$?
+          ATTEMPT=0
+          while :; do
+            NOW=$(date +%s)
+            REMAIN=$(( END_TARGET_EPOCH - NOW ))
+            if [ "$REMAIN" -le 3 ]; then
+              echo "[SA] Target duration reached (${TARGET_SECONDS}s)."
+              break
+            fi
+            if [ -f "$FAIL_FILE" ]; then
+              echo "[SA] Setup/connection failure detected - will not restart."
+              FFMPEG_EXIT=1
+              break
+            fi
+            STREAM_CUT="$REMAIN"
+            ATTEMPT=$(( ATTEMPT + 1 ))
+            if [ "$ATTEMPT" -eq 1 ]; then
+              echo "[SA] Launch attempt #${ATTEMPT} (mode=${ASSET_MODE}, cut=${STREAM_CUT}s)."
+              case "$ASSET_MODE" in
+                photo_video) run_photo_video_mode ;;
+                photo_only)  run_photo_only_mode  ;;
+                video_only)  run_video_only_mode  ;;
+                *)
+                  echo "[SA_STATUS:FAILED:Unknown asset_mode: ${ASSET_MODE}]"
+                  touch "$FAIL_FILE"; FFMPEG_EXIT=1; break
+                  ;;
+              esac
+              FFMPEG_EXIT=$?
+            else
+              echo "[SA] FFmpeg dropped early - watchdog auto-restart #${ATTEMPT} (fill, remaining=${STREAM_CUT}s)."
+              echo "[SA_STATUS:RECONNECTING]"
+              run_fill_mode
+              FFMPEG_EXIT=$?
+            fi
+            NOW=$(date +%s)
+            if [ "$NOW" -ge $(( END_TARGET_EPOCH - 3 )) ]; then
+              break
+            fi
+            if [ "$FFMPEG_EXIT" -eq 0 ]; then
+              break
+            fi
+            echo "[SA] FFmpeg exit=${FFMPEG_EXIT} before target. Restarting in 2s..."
+            sleep 2
+          done
 
-          kill "$MONITOR_PID"  2>/dev/null; wait "$MONITOR_PID"  2>/dev/null
-          kill "$WATCHDOG_PID" 2>/dev/null; wait "$WATCHDOG_PID" 2>/dev/null
+          touch "$DONE_FILE"
+          kill "$MONITOR_PID" 2>/dev/null; wait "$MONITOR_PID" 2>/dev/null
+          kill "$KILLER_PID"  2>/dev/null; wait "$KILLER_PID"  2>/dev/null
 
           echo ""
-          if   [ "$FFMPEG_EXIT" -eq 0 ];   then
-            echo "✅ [SA] FFmpeg exited cleanly (code 0)."
-            echo "[SA_STATUS:COMPLETE]"
-          elif [ "$FFMPEG_EXIT" -eq 130 ] || [ "$FFMPEG_EXIT" -eq 143 ]; then
-            echo "⏱ [SA] FFmpeg stopped by watchdog SIGTERM (expected for timed streams)."
-            echo "[SA_STATUS:COMPLETE]"
-          elif [ "$FFMPEG_EXIT" -eq 137 ]; then
-            echo "⚡ [SA] FFmpeg force-killed by watchdog SIGKILL."
-            echo "[SA_STATUS:COMPLETE]"
+          if [ -f "$FAIL_FILE" ]; then
+            echo "[SA] Session ended due to a setup/connection failure (see log below)."
           else
-            echo "⚠  [SA] FFmpeg exited with code: ${FFMPEG_EXIT}"
-            if ! grep -q 'SA_STATUS:FAILED' "$FFMPEG_LOG" 2>/dev/null; then
-              LAST_ERR=$(tail -5 "$FFMPEG_LOG" | grep -i error | tail -1 | cut -c1-140)
-              echo "[SA_STATUS:FAILED:FFmpeg exit ${FFMPEG_EXIT}: ${LAST_ERR}]"
-            fi
+            echo "[SA] Streaming session completed for the full requested duration."
+            echo "[SA_STATUS:COMPLETE]"
           fi
 
           echo "ffmpeg_exit_code=${FFMPEG_EXIT}" >> "$GITHUB_OUTPUT"
 
           echo ""
           echo "--- FFmpeg stderr tail ---"
-          tail -20 "$FFMPEG_LOG" 2>/dev/null || true
+          tail -25 "$FFMPEG_LOG" 2>/dev/null || true
           echo "--- end stderr ---"
           echo ""
+          exit 0
 
 
-      # ============================================================
       # STEP 8 — Send RTMP end-of-stream signal (clean teardown)
       # ============================================================
       - name: "[8/8] Send RTMP end-of-stream signal (clean teardown)"
