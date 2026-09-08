@@ -400,14 +400,6 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             ffmpeg \
             libavcodec-extra \
-            libopus0 \
-            libvorbis0a \
-            libvpx7 \
-            libmp3lame0 \
-            libx264-163 \
-            libass9 \
-            libfreetype6 \
-            libssl3 \
             python3 \
             python3-pip \
             jq \
