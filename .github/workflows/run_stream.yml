@@ -1,10 +1,21 @@
-name: "StreamAdda v9 — GitHub Actions Streaming Engine (Bulletproof)"
+name: "StreamAdda Ultimate Edition — GitHub Actions Streaming Engine"
 
 # ==============================================================
-# TRIGGERS
-# 1. repository_dispatch  →  fired by the Netlify frontend UI
-#    event_type: "start-stream"
-# 2. workflow_dispatch    →  manual run from the Actions tab
+#  StreamAdda Ultimate Edition
+#  Production-grade 24/7-style RTMP streaming engine.
+#
+#  Highlights over v9:
+#   - Python-built FFmpeg command (bullet-proof multi-photo slideshow)
+#   - Natural road/street ASMR ambient audio engine (aevalsrc+anoisesrc+amix)
+#   - [SA_TELEMETRY] live pipeline parsing (frame/fps/bitrate/speed/time)
+#   - Zero-drift ISO-8601 scheduled start (absolute-epoch convergence loop)
+#   - Dynamic photo/video split:  photo = total - video  (ffprobe)
+#   - Watchdog auto-restart + hard deadline killer
+#
+#  TRIGGERS
+#   1. repository_dispatch  →  fired by the frontend UI
+#      event_type: "start-stream"
+#   2. workflow_dispatch    →  manual run from the Actions tab
 # ==============================================================
 on:
   repository_dispatch:
@@ -60,7 +71,7 @@ on:
         default: ""
         type: string
       photo_filename:
-        description: "Photo filename in repo root (local mode)"
+        description: "Photo filename(s) in repo root, comma-separated for slideshow"
         required: false
         default: "live_photo.jpg"
         type: string
@@ -70,7 +81,7 @@ on:
         default: "live_video.mp4"
         type: string
       ambient_audio:
-        description: "Enable ambient traffic noise audio (true/false)"
+        description: "Enable natural road/street ASMR audio (true/false)"
         required: false
         default: "false"
         type: string
@@ -85,7 +96,7 @@ on:
         default: ""
         type: string
       start_at:
-        description: "Scheduled start time (ISO 8601, e.g. 2024-06-01T14:30:00Z)"
+        description: "Scheduled start time (ISO 8601, e.g. 2026-06-01T14:30:00Z)"
         required: false
         default: ""
         type: string
@@ -98,17 +109,16 @@ on:
 
 jobs:
   stream:
-    name: "FFmpeg Live Stream Engine"
+    name: "FFmpeg Ultimate Live Engine"
     runs-on: ubuntu-latest
-    # GitHub's hard cap is 6 hours (360 min). Our logic enforces 345 min.
-    # The extra 15 min headroom covers install + teardown steps.
+    # GitHub force-kills any job at 360 min (6h). We clamp logic to 345 min
+    # to guarantee ~15 min headroom for install + teardown.
     timeout-minutes: 360
 
     steps:
 
       # ============================================================
       # STEP 1 — Checkout repository
-      # The repo root must contain photo/video assets in local mode.
       # ============================================================
       - name: "[1/8] Checkout repository"
         uses: actions/checkout@v4
@@ -117,109 +127,35 @@ jobs:
       # ============================================================
       # STEP 2 — Extract, sanitise, and validate ALL parameters
       #
-      # Supports BOTH trigger sources:
-      #   repository_dispatch  → reads client_payload.payload_config (JSON bundle)
-      #   workflow_dispatch    → reads github.event.inputs.*
-      #
-      # ╔══════════════════════════════════════════════════════════╗
-      # ║  ROOT-CAUSE FIX — "exit code 100 / not valid JSON"      ║
-      # ╠══════════════════════════════════════════════════════════╣
-      # ║  PROBLEM: Inline GitHub expression expansion inside a   ║
-      # ║  bash `run:` block — e.g.                               ║
-      # ║    echo '${{ github.event.client_payload.payload_config }}'  ║
-      # ║  — is performed by the Actions runner BEFORE the shell  ║
-      # ║  ever sees the string.  Any double-quote, backslash,    ║
-      # ║  dollar sign, or brace inside the JSON value is NOT     ║
-      # ║  shell-escaped by the runner; it is injected verbatim   ║
-      # ║  into the command line, where it immediately corrupts   ║
-      # ║  shell grammar and silently mangles the JSON.           ║
-      # ║                                                         ║
-      # ║  SOLUTION: Use a step-level `env:` mapping.            ║
-      # ║  The runner copies the raw value into an OS environment ║
-      # ║  variable WITHOUT any shell interpretation.  The bash  ║
-      # ║  script then reads it via $RAW_PAYLOAD_JSON — a plain  ║
-      # ║  env-var read that is 100% metacharacter-safe.         ║
-      # ╚══════════════════════════════════════════════════════════╝
-      #
-      # KEY INVARIANTS:
-      #   ✔ 345-minute hard clamp — any duration > 345 is capped
-      #   ✔ Asset mode routing — photo_only, video_only, photo_video
-      #   ✔ Drive mode flag + URL extraction
-      #   ✔ Ambient audio flag
+      # INJECTION-SAFE ENV CAPTURE:
+      #   The entire payload_config JSON is copied into RAW_PAYLOAD_JSON
+      #   at the runner level (env:) BEFORE bash starts, so no shell
+      #   metacharacter inside the JSON can ever corrupt the command line.
       # ============================================================
       - name: "[2/8] Extract and validate parameters"
         id: params
-        # ──────────────────────────────────────────────────────────
-        # INJECTION-SAFE ENV CAPTURE
-        # The entire payload_config JSON string is assigned to the
-        # environment variable RAW_PAYLOAD_JSON at the runner level
-        # before bash starts.  No shell expansion ever touches it.
-        # This is the ONLY safe way to pass a JSON blob from a
-        # GitHub Actions expression into a bash script.
-        # ──────────────────────────────────────────────────────────
         env:
           RAW_PAYLOAD_JSON: ${{ github.event.client_payload.payload_config }}
         shell: bash
         run: |
-          # ============================================================
-          # v9 ABSOLUTE DURATION CLAMP CONSTANT  (declared FIRST)
-          # GitHub Actions force-kills any job at 360 minutes (6h cap).
-          # We enforce a hard mathematical ceiling of 345 minutes so
-          # there is always ~15 min of headroom for install + teardown.
-          # ============================================================
+          set -euo pipefail
           readonly ABSOLUTE_MAX_MINUTES=345
 
-          # ---- Pick values from the correct trigger source ----
           if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-
-            # ========================================================
-            # v9 SINGLE-BUNDLE CONTRACT (GitHub API 422 FIX)
-            #
-            # The frontend sends exactly ONE top-level client_payload
-            # property: `payload_config`.  It is a JSON string that
-            # contains EVERY parameter (stream_key, total_minutes,
-            # ratio, platform, asset_mode, drive_mode, photo_filename,
-            # video_filename, photo_drive_url, video_drive_url,
-            # ambient_audio, plus optional extras).
-            #
-            # We read it from the env-var RAW_PAYLOAD_JSON (set in the
-            # step-level `env:` block above) to avoid ALL shell-injection
-            # risks.  Then we decode each field individually with jq.
-            # ========================================================
-
-            # ---- Guard: env var must be set and non-empty whitespace ----
             if [ -z "$(printf '%s' "${RAW_PAYLOAD_JSON:-}" | tr -d '[:space:]')" ]; then
-              echo "⚠  [SA] payload_config was empty or missing. Falling back to empty object defaults." >&2
+              echo "WARN [SA] payload_config empty. Using empty-object defaults." >&2
               RAW_PAYLOAD_JSON='{}'
             fi
-
-            # ---- Strict JSON validation via jq ----
-            # If the value is not parseable JSON, we emit the SA_STATUS
-            # FAILED marker so the frontend poller can surface the exact
-            # reason, then abort with exit 1 (NOT exit 100).
             if ! printf '%s' "${RAW_PAYLOAD_JSON}" | jq empty >/dev/null 2>&1; then
-              echo "" >&2
-              echo "[SA_STATUS:FAILED:payload_config is not valid JSON — cannot decode advanced options.]" >&2
-              echo "❌ [SA] FATAL: RAW_PAYLOAD_JSON failed jq validation." >&2
-              echo "    Raw value (first 200 chars): $(printf '%s' "${RAW_PAYLOAD_JSON}" | cut -c1-200)" >&2
+              echo "[SA_STATUS:FAILED:payload_config is not valid JSON — cannot decode options.]" >&2
+              echo "FATAL [SA] RAW_PAYLOAD_JSON failed jq validation." >&2
               exit 1
             fi
-
-            # ── jq helper: safely read one key, return empty string on null ──
-            # Usage: pc KEY [DEFAULT]
             pc() {
               local val
               val=$(printf '%s' "${RAW_PAYLOAD_JSON}" | jq -r --arg k "$1" '.[$k] // empty' 2>/dev/null)
-              # If empty and a default was supplied, echo the default
-              if [ -z "$val" ] && [ -n "${2:-}" ]; then
-                echo "$2"
-              else
-                echo "$val"
-              fi
+              if [ -z "$val" ] && [ -n "${2:-}" ]; then echo "$2"; else echo "$val"; fi
             }
-
-            # ── Decode every field from the JSON bundle ──
-            # These are the 11 mandatory fields the frontend guarantees:
             RAW_KEY=$(pc stream_key)
             RAW_MINUTES=$(pc total_minutes "60")
             RAW_RATIO=$(pc ratio "9:16")
@@ -231,20 +167,13 @@ jobs:
             RAW_PHOTO_DRIVE=$(pc photo_drive_url)
             RAW_VIDEO_DRIVE=$(pc video_drive_url)
             RAW_AMBIENT=$(pc ambient_audio "false")
-
-            # ── Optional extra fields (present in full bundle) ──
             RAW_NAME=$(pc stream_name "Live Stream")
             RAW_BACKUP=$(pc backup_rtmp)
             RAW_YTID=$(pc youtube_video_id)
             RAW_START_AT=$(pc start_at)
             RAW_STOP_AT=$(pc stop_at)
-
-            AMBIENT_AUDIO_PROBE="$(printf '%s' "${RAW_PAYLOAD_JSON}" | jq -r '.ambient_audio // "false"' 2>/dev/null)"
-            echo "✅ [SA] Decoded payload_config bundle via jq (ambient_audio=${AMBIENT_AUDIO_PROBE})."
-            echo "🔎 [SA] Decoded: stream_key=**** total_minutes=${RAW_MINUTES} ratio=${RAW_RATIO} platform=${RAW_PLATFORM} asset_mode=${RAW_ASSET_MODE}"
-
+            echo "OK [SA] Decoded payload_config bundle via jq."
           else
-            # ── workflow_dispatch: read directly from inputs ──
             RAW_NAME="${{ github.event.inputs.stream_name }}"
             RAW_KEY="${{ github.event.inputs.stream_key }}"
             RAW_RATIO="${{ github.event.inputs.ratio }}"
@@ -263,7 +192,6 @@ jobs:
             RAW_STOP_AT="${{ github.event.inputs.stop_at }}"
           fi
 
-          # ---- Apply defaults ----
           STREAM_NAME="${RAW_NAME:-Live Stream}"
           STREAM_KEY="${RAW_KEY:-}"
           RATIO="${RAW_RATIO:-9:16}"
@@ -281,159 +209,106 @@ jobs:
           START_AT="${RAW_START_AT:-}"
           STOP_AT="${RAW_STOP_AT:-}"
 
-          # ---- VALIDATE: stream key (required) ----
           if [ -z "$STREAM_KEY" ]; then
-            echo "" >&2
-            echo "[SA_STATUS:FAILED:stream_key is empty. Supply the RTMP key from YouTube Studio.]" >&2
-            echo "❌ [SA] FATAL: stream_key is empty." >&2
+            echo "[SA_STATUS:FAILED:stream_key is empty. Supply the RTMP key from your platform.]" >&2
             exit 1
           fi
-
-          # ---- VALIDATE: ratio ----
           if [ "$RATIO" != "16:9" ] && [ "$RATIO" != "9:16" ]; then
-            echo "⚠  [SA] Invalid ratio '${RATIO}'. Defaulting to 9:16."
-            RATIO="9:16"
+            echo "WARN [SA] Invalid ratio '${RATIO}'. Defaulting to 9:16."; RATIO="9:16"
           fi
-
-          # ---- VALIDATE & CLAMP: total_minutes (THE 360-MINUTE BUG FIX) ----
-          # Any value that is non-numeric, below 2, or above 345 is corrected
-          # RIGHT HERE before any downstream arithmetic can misfire.
           if ! echo "$TOTAL_MINUTES" | grep -qE '^[0-9]+$'; then
-            echo "⚠  [SA] Non-numeric total_minutes '${TOTAL_MINUTES}'. Defaulting to 60."
-            TOTAL_MINUTES=60
+            echo "WARN [SA] Non-numeric total_minutes. Defaulting to 60."; TOTAL_MINUTES=60
           fi
-          if [ "$TOTAL_MINUTES" -lt 2 ]; then
-            echo "⚠  [SA] total_minutes < 2. Clamping to 2."
-            TOTAL_MINUTES=2
-          fi
+          [ "$TOTAL_MINUTES" -lt 2 ] && TOTAL_MINUTES=2
           if [ "$TOTAL_MINUTES" -gt "$ABSOLUTE_MAX_MINUTES" ]; then
-            echo "⚠  [SA] total_minutes=${TOTAL_MINUTES} exceeds safety cap. CLAMPING TO ${ABSOLUTE_MAX_MINUTES}."
-            TOTAL_MINUTES=$ABSOLUTE_MAX_MINUTES
+            echo "WARN [SA] total_minutes clamped to ${ABSOLUTE_MAX_MINUTES}."; TOTAL_MINUTES=$ABSOLUTE_MAX_MINUTES
           fi
-
-          # ---- VALIDATE: asset mode ----
           case "$ASSET_MODE" in
             photo_only|video_only|photo_video) ;;
-            *)
-              echo "⚠  [SA] Unknown asset_mode '${ASSET_MODE}'. Defaulting to photo_video."
-              ASSET_MODE="photo_video"
-              ;;
+            *) echo "WARN [SA] Unknown asset_mode. Defaulting to photo_video."; ASSET_MODE="photo_video" ;;
           esac
 
-          # ---- VALIDATE: platform + RTMP base URL ----
           if [ "$PLATFORM" = "facebook" ]; then
-            RTMP_BASE="rtmps://live-api-s.facebook.com:443/rtmp/"
-            PLATFORM_LABEL="Facebook Live"
+            RTMP_BASE="rtmps://live-api-s.facebook.com:443/rtmp/"; PLATFORM_LABEL="Facebook Live"
           else
-            PLATFORM="youtube"
-            RTMP_BASE="rtmps://a.rtmp.youtube.com/live2/"
-            PLATFORM_LABEL="YouTube Live"
+            PLATFORM="youtube"; RTMP_BASE="rtmps://a.rtmp.youtube.com/live2/"; PLATFORM_LABEL="YouTube Live"
           fi
           RTMP_URL="${RTMP_BASE}${STREAM_KEY}"
 
-          # ---- Set canvas dimensions from ratio ----
-          if [ "$RATIO" = "16:9" ]; then
-            WIDTH=1280; HEIGHT=720
-          else
-            WIDTH=720;  HEIGHT=1280
-          fi
+          if [ "$RATIO" = "16:9" ]; then WIDTH=1280; HEIGHT=720; else WIDTH=720; HEIGHT=1280; fi
 
-          # ---- Normalise boolean flags ----
-          normalise_bool() {
-            case "${1,,}" in true|1|yes|on) echo true;; *) echo false;; esac
-          }
+          normalise_bool() { case "${1,,}" in true|1|yes|on) echo true;; *) echo false;; esac; }
           DRIVE_MODE=$(normalise_bool "$DRIVE_MODE")
           AMBIENT_AUDIO=$(normalise_bool "$AMBIENT_AUDIO")
 
-          # ---- Export all outputs for downstream steps ----
-          echo "stream_name=${STREAM_NAME}"             >> "$GITHUB_OUTPUT"
-          echo "stream_key=${STREAM_KEY}"               >> "$GITHUB_OUTPUT"
-          echo "ratio=${RATIO}"                         >> "$GITHUB_OUTPUT"
-          echo "total_minutes=${TOTAL_MINUTES}"         >> "$GITHUB_OUTPUT"
-          echo "platform=${PLATFORM}"                   >> "$GITHUB_OUTPUT"
-          echo "platform_label=${PLATFORM_LABEL}"       >> "$GITHUB_OUTPUT"
-          echo "asset_mode=${ASSET_MODE}"               >> "$GITHUB_OUTPUT"
-          echo "drive_mode=${DRIVE_MODE}"               >> "$GITHUB_OUTPUT"
-          echo "photo_drive_url=${PHOTO_DRIVE_URL}"     >> "$GITHUB_OUTPUT"
-          echo "video_drive_url=${VIDEO_DRIVE_URL}"     >> "$GITHUB_OUTPUT"
-          echo "photo_filename=${PHOTO_FILENAME}"       >> "$GITHUB_OUTPUT"
-          echo "video_filename=${VIDEO_FILENAME}"       >> "$GITHUB_OUTPUT"
-          echo "ambient_audio=${AMBIENT_AUDIO}"         >> "$GITHUB_OUTPUT"
-          echo "backup_rtmp=${BACKUP_RTMP}"             >> "$GITHUB_OUTPUT"
-          echo "youtube_video_id=${YOUTUBE_VIDEO_ID}"   >> "$GITHUB_OUTPUT"
-          echo "start_at=${START_AT}"                   >> "$GITHUB_OUTPUT"
-          echo "stop_at=${STOP_AT}"                     >> "$GITHUB_OUTPUT"
-          echo "rtmp_url=${RTMP_URL}"                   >> "$GITHUB_OUTPUT"
-          echo "rtmp_base=${RTMP_BASE}"                 >> "$GITHUB_OUTPUT"
-          echo "width=${WIDTH}"                         >> "$GITHUB_OUTPUT"
-          echo "height=${HEIGHT}"                       >> "$GITHUB_OUTPUT"
+          {
+            echo "stream_name=${STREAM_NAME}"
+            echo "stream_key=${STREAM_KEY}"
+            echo "ratio=${RATIO}"
+            echo "total_minutes=${TOTAL_MINUTES}"
+            echo "platform=${PLATFORM}"
+            echo "platform_label=${PLATFORM_LABEL}"
+            echo "asset_mode=${ASSET_MODE}"
+            echo "drive_mode=${DRIVE_MODE}"
+            echo "photo_drive_url=${PHOTO_DRIVE_URL}"
+            echo "video_drive_url=${VIDEO_DRIVE_URL}"
+            echo "photo_filename=${PHOTO_FILENAME}"
+            echo "video_filename=${VIDEO_FILENAME}"
+            echo "ambient_audio=${AMBIENT_AUDIO}"
+            echo "backup_rtmp=${BACKUP_RTMP}"
+            echo "youtube_video_id=${YOUTUBE_VIDEO_ID}"
+            echo "start_at=${START_AT}"
+            echo "stop_at=${STOP_AT}"
+            echo "rtmp_url=${RTMP_URL}"
+            echo "rtmp_base=${RTMP_BASE}"
+            echo "width=${WIDTH}"
+            echo "height=${HEIGHT}"
+          } >> "$GITHUB_OUTPUT"
 
-          # ---- Print configuration banner ----
           echo ""
-          echo "╔═══════════════════════════════════════════════╗"
-          echo "║       StreamAdda v9 — GitHub Actions Engine  ║"
-          echo "╚═══════════════════════════════════════════════╝"
-          printf "  Stream Name    : %s\n"  "$STREAM_NAME"
-          printf "  Platform       : %s\n"  "$PLATFORM_LABEL"
-          printf "  Ratio          : %s (%sx%s)\n" "$RATIO" "$WIDTH" "$HEIGHT"
-          printf "  Duration       : %s min (SAFETY CAP: 345)\n" "$TOTAL_MINUTES"
-          printf "  Asset Mode     : %s\n"  "$ASSET_MODE"
-          printf "  Drive Mode     : %s\n"  "$DRIVE_MODE"
-          printf "  Ambient Audio  : %s\n"  "$AMBIENT_AUDIO"
-          printf "  RTMP Target    : %s****\n" "$RTMP_BASE"
-          [ -n "$BACKUP_RTMP" ] && printf "  Backup RTMP    : Configured\n" || printf "  Backup RTMP    : None\n"
-          [ -n "$START_AT" ] && printf "  Sched. Start   : %s\n" "$START_AT" || printf "  Sched. Start   : Immediate\n"
-          [ -n "$STOP_AT"  ] && printf "  Hard Stop At   : %s\n" "$STOP_AT"
+          echo "=================================================="
+          echo "   StreamAdda Ultimate Edition — Engine Boot"
+          echo "=================================================="
+          printf "  Stream Name   : %s\n" "$STREAM_NAME"
+          printf "  Platform      : %s\n" "$PLATFORM_LABEL"
+          printf "  Ratio         : %s (%sx%s)\n" "$RATIO" "$WIDTH" "$HEIGHT"
+          printf "  Duration      : %s min (cap 345)\n" "$TOTAL_MINUTES"
+          printf "  Asset Mode    : %s\n" "$ASSET_MODE"
+          printf "  Drive Mode    : %s\n" "$DRIVE_MODE"
+          printf "  ASMR Ambient  : %s\n" "$AMBIENT_AUDIO"
+          printf "  Photo File(s) : %s\n" "$PHOTO_FILENAME"
+          [ -n "$START_AT" ] && printf "  Sched. Start  : %s\n" "$START_AT" || printf "  Sched. Start  : Immediate\n"
+          [ -n "$STOP_AT" ]  && printf "  Hard Stop At  : %s\n" "$STOP_AT"
           echo ""
 
 
       # ============================================================
-      # STEP 3 — Install FFmpeg and all required codec libraries
+      # STEP 3 — Install FFmpeg and required tooling
       # ============================================================
       - name: "[3/8] Install FFmpeg and system dependencies"
         shell: bash
         run: |
-          echo "📦 [SA] Updating apt package lists..."
+          set -euo pipefail
+          echo "[SA] Updating apt package lists..."
           sudo apt-get update -qq
-
-          echo "📦 [SA] Installing FFmpeg, codecs, and tools..."
+          echo "[SA] Installing FFmpeg, codecs, and tools..."
           sudo apt-get install -y --no-install-recommends \
-            ffmpeg \
-            libavcodec-extra \
-            python3 \
-            python3-pip \
-            jq \
-            curl \
-            wget \
-            procps \
-            coreutils
-
+            ffmpeg libavcodec-extra python3 python3-pip jq curl wget procps coreutils
           echo ""
-          echo "✅ [SA] FFmpeg installation complete."
-          echo "🔍 [SA] Verifying FFmpeg binary:"
-          ffmpeg -version 2>&1 | head -4
-          echo "✅ [SA] All codec libraries confirmed."
-          echo ""
+          echo "[SA] FFmpeg installation complete."
+          ffmpeg -version 2>&1 | head -3
+          ffprobe -version 2>&1 | head -1
+          echo "[SA] All codec libraries confirmed."
 
 
       # ============================================================
       # STEP 4 — Download or verify source media assets
-      #
-      # TWO sub-modes:
-      #   A) DRIVE MODE (drive_mode=true):
-      #      Download photo and/or video from Google Drive
-      #   B) LOCAL MODE (drive_mode=false):
-      #      Verify that the required filenames exist in the repo root
-      #
-      # asset_mode controls which assets are required:
-      #   photo_only  → only photo required
-      #   video_only  → only video required
-      #   photo_video → both required
       # ============================================================
       - name: "[4/8] Download or verify source media assets"
         id: assets
         shell: bash
         run: |
+          set -uo pipefail
           ASSET_MODE="${{ steps.params.outputs.asset_mode }}"
           DRIVE_MODE="${{ steps.params.outputs.drive_mode }}"
           PHOTO_DRIVE_URL="${{ steps.params.outputs.photo_drive_url }}"
@@ -441,356 +316,224 @@ jobs:
           PHOTO_FILENAME="${{ steps.params.outputs.photo_filename }}"
           VIDEO_FILENAME="${{ steps.params.outputs.video_filename }}"
 
-          NEEDS_PHOTO=false
-          NEEDS_VIDEO=false
+          NEEDS_PHOTO=false; NEEDS_VIDEO=false
           case "$ASSET_MODE" in
             photo_only)  NEEDS_PHOTO=true ;;
             video_only)  NEEDS_VIDEO=true ;;
             photo_video) NEEDS_PHOTO=true; NEEDS_VIDEO=true ;;
           esac
+          echo "[SA] mode=${ASSET_MODE} drive=${DRIVE_MODE} needsPhoto=${NEEDS_PHOTO} needsVideo=${NEEDS_VIDEO}"
 
-          echo ""
-          echo "📂 [SA] Asset mode: ${ASSET_MODE}  |  Drive mode: ${DRIVE_MODE}"
-          echo "📂 [SA] Needs photo: ${NEEDS_PHOTO}  |  Needs video: ${NEEDS_VIDEO}"
-          echo ""
-
-          # ----------------------------------------------------------
-          # FAIL-SAFE FALLBACK ENGINE
-          # If a Google Drive asset cannot be fetched or validated, we
-          # recover by using repo-root placeholders.  If those are also
-          # absent, FFmpeg synthesises a minimal placeholder so the
-          # pipeline NEVER hangs in an infinite "starting" cycle.
-          # ----------------------------------------------------------
-          fallback_asset() {
-            local KIND="$1"
-            if [ "$KIND" = "photo" ]; then
-              if [ "${PHOTO_FILENAME}" != "live_photo.jpg" ] && [ -f "${PHOTO_FILENAME}" ] && [ -s "${PHOTO_FILENAME}" ]; then
-                cp -f "${PHOTO_FILENAME}" live_photo.jpg
-                echo "OK [SA] Fallback: repo placeholder '${PHOTO_FILENAME}' -> live_photo.jpg"
-              elif [ -f "live_photo.jpg" ] && [ -s "live_photo.jpg" ]; then
-                echo "OK [SA] Fallback: using repo root 'live_photo.jpg'."
-              else
-                echo "WARN [SA] No repo photo placeholder. Synthesising placeholder image."
-                ffmpeg -hide_banner -y -f lavfi -i "color=c=0x0f172a:s=720x1280:d=1" -frames:v 1 live_photo.jpg >/dev/null 2>&1 || \
-                ffmpeg -hide_banner -y -f lavfi -i "color=c=black:s=720x1280:d=1" -frames:v 1 live_photo.jpg >/dev/null 2>&1
-              fi
-            else
-              if [ "${VIDEO_FILENAME}" != "live_video.mp4" ] && [ -f "${VIDEO_FILENAME}" ] && [ -s "${VIDEO_FILENAME}" ]; then
-                cp -f "${VIDEO_FILENAME}" live_video.mp4
-                echo "OK [SA] Fallback: repo placeholder '${VIDEO_FILENAME}' -> live_video.mp4"
-              elif [ -f "live_video.mp4" ] && [ -s "live_video.mp4" ]; then
-                echo "OK [SA] Fallback: using repo root 'live_video.mp4'."
-              else
-                echo "WARN [SA] No repo video placeholder. Synthesising 5s placeholder clip."
-                ffmpeg -hide_banner -y \
-                  -f lavfi -i "color=c=black:s=720x1280:r=30:d=5" \
-                  -f lavfi -i "anoisesrc=r=44100:amplitude=0.001:color=white" \
-                  -shortest -t 5 -c:v libx264 -pix_fmt yuv420p \
-                  -c:a aac -b:a 128k -ar 44100 -ac 2 live_video.mp4 >/dev/null 2>&1
-              fi
-            fi
-            if [ "$KIND" = "photo" ] && { [ ! -f live_photo.jpg ] || [ ! -s live_photo.jpg ]; }; then
-              echo "[SA_STATUS:FAILED:Photo asset unrecoverable after Drive + placeholder fallback]" >&2
-              exit 1
-            fi
-            if [ "$KIND" = "video" ] && { [ ! -f live_video.mp4 ] || [ ! -s live_video.mp4 ]; }; then
-              echo "[SA_STATUS:FAILED:Video asset unrecoverable after Drive + placeholder fallback]" >&2
-              exit 1
-            fi
+          synth_photo() {
+            echo "WARN [SA] Synthesising placeholder image -> live_photo.jpg"
+            ffmpeg -hide_banner -y -f lavfi -i "color=c=0x0f172a:s=720x1280:d=1" -frames:v 1 live_photo.jpg >/dev/null 2>&1 || \
+            ffmpeg -hide_banner -y -f lavfi -i "color=c=black:s=720x1280:d=1" -frames:v 1 live_photo.jpg >/dev/null 2>&1
+          }
+          synth_video() {
+            echo "WARN [SA] Synthesising 5s placeholder clip -> live_video.mp4"
+            ffmpeg -hide_banner -y \
+              -f lavfi -i "color=c=black:s=720x1280:r=30:d=5" \
+              -f lavfi -i "anoisesrc=r=44100:amplitude=0.001:color=white" \
+              -shortest -t 5 -c:v libx264 -pix_fmt yuv420p -c:a aac -b:a 128k -ar 44100 -ac 2 live_video.mp4 >/dev/null 2>&1
           }
 
           download_from_drive() {
-            local DRIVE_URL="$1"
-            local OUTPUT_PATH="$2"
-            local ASSET_LABEL="$3"
-
-            echo "📥 [SA] Downloading ${ASSET_LABEL} from Google Drive..."
-            echo "    URL: ${DRIVE_URL}"
-
+            local DRIVE_URL="$1" OUTPUT_PATH="$2" ASSET_LABEL="$3"
+            echo "[SA] Downloading ${ASSET_LABEL} from Google Drive..."
             local FILE_ID
             FILE_ID=$(echo "$DRIVE_URL" | grep -oP '(?<=/d/)[^/?]+' | head -1)
-            if [ -z "$FILE_ID" ]; then
-              FILE_ID=$(echo "$DRIVE_URL" | grep -oP '(?<=id=)[^&]+' | head -1)
-            fi
-            if [ -z "$FILE_ID" ]; then
-              echo "❌ [SA] Cannot extract Google Drive file ID from URL: ${DRIVE_URL}" >&2
-              return 1
-            fi
-            echo "    File ID: ${FILE_ID}"
-
-            local COOKIE_JAR
-            COOKIE_JAR=$(mktemp /tmp/drive_cookies_XXXXXX)
-
+            [ -z "$FILE_ID" ] && FILE_ID=$(echo "$DRIVE_URL" | grep -oP '(?<=id=)[^&]+' | head -1)
+            if [ -z "$FILE_ID" ]; then echo "ERR [SA] Cannot extract Drive file ID." >&2; return 1; fi
+            local COOKIE_JAR; COOKIE_JAR=$(mktemp /tmp/drive_cookies_XXXXXX)
             local CONFIRM_TOKEN
             CONFIRM_TOKEN=$(curl -sc "$COOKIE_JAR" -L \
-              "https://drive.google.com/uc?export=download&id=${FILE_ID}" \
-              2>/dev/null \
-              | grep -oP '(?<=confirm=)[^&"]+' | head -1)
-
+              "https://drive.google.com/uc?export=download&id=${FILE_ID}" 2>/dev/null \
+              | grep -oP '(?<=confirm=)[^&\"]+' | head -1)
             if [ -n "$CONFIRM_TOKEN" ]; then
-              echo "    Large file detected. Using confirmation token: ${CONFIRM_TOKEN}"
               curl -Lb "$COOKIE_JAR" \
                 "https://drive.google.com/uc?export=download&id=${FILE_ID}&confirm=${CONFIRM_TOKEN}" \
-                -o "${OUTPUT_PATH}.part" \
-                --progress-bar 2>&1
+                -o "${OUTPUT_PATH}.part" --progress-bar 2>&1
             else
-              echo "    Standard file. Downloading directly..."
               curl -L \
                 "https://drive.usercontent.google.com/download?id=${FILE_ID}&export=download&authuser=0" \
-                -o "${OUTPUT_PATH}.part" \
-                --progress-bar 2>&1
+                -o "${OUTPUT_PATH}.part" --progress-bar 2>&1
             fi
-
             rm -f "$COOKIE_JAR"
-
-            if [ ! -f "${OUTPUT_PATH}.part" ] || [ ! -s "${OUTPUT_PATH}.part" ]; then
-              echo "WARN [SA] Drive download failed or returned empty for ${ASSET_LABEL}." >&2
-              rm -f "${OUTPUT_PATH}.part"
-              return 1
-            fi
-
+            if [ ! -s "${OUTPUT_PATH}.part" ]; then echo "WARN [SA] Drive download empty." >&2; rm -f "${OUTPUT_PATH}.part"; return 1; fi
             mv -f "${OUTPUT_PATH}.part" "${OUTPUT_PATH}"
-            local FILE_SIZE
-            FILE_SIZE=$(du -sh "$OUTPUT_PATH" | awk '{print $1}')
-            echo "OK [SA] ${ASSET_LABEL} downloaded and verified. Size: ${FILE_SIZE}"
+            echo "[SA] ${ASSET_LABEL} downloaded ($(du -sh "$OUTPUT_PATH" | awk '{print $1}'))."
           }
 
-          # ----------------------------------------------------------
-          # ASSET ACQUISITION
-          # ----------------------------------------------------------
-          if [ "$DRIVE_MODE" = "true" ]; then
-            echo "☁  [SA] DRIVE MODE active. Downloading assets from Google Drive..."
-
-            if [ "$NEEDS_PHOTO" = "true" ]; then
-              if [ -z "$PHOTO_DRIVE_URL" ]; then
-                echo "❌ [SA] FATAL: photo_drive_url is required for mode '${ASSET_MODE}' with Drive mode ON." >&2
-                echo "[SA_STATUS:FAILED:photo_drive_url missing for mode ${ASSET_MODE}]"
-                exit 1
-              fi
-              if ! download_from_drive "$PHOTO_DRIVE_URL" "live_photo.jpg" "PHOTO"; then
-                echo "WARN [SA] Drive PHOTO fetch failed. Engaging fail-safe fallback."
-                fallback_asset photo
-              fi
-              if ! file live_photo.jpg | grep -qiE 'image|jpeg|png|jpg'; then
-                echo "WARN [SA] live_photo.jpg is not a valid image. Engaging fallback."
-                fallback_asset photo
-              fi
-            fi
-
-            if [ "$NEEDS_VIDEO" = "true" ]; then
-              if [ -z "$VIDEO_DRIVE_URL" ]; then
-                echo "❌ [SA] FATAL: video_drive_url is required for mode '${ASSET_MODE}' with Drive mode ON." >&2
-                echo "[SA_STATUS:FAILED:video_drive_url missing for mode ${ASSET_MODE}]"
-                exit 1
-              fi
-              if ! download_from_drive "$VIDEO_DRIVE_URL" "live_video.mp4" "VIDEO"; then
-                echo "WARN [SA] Drive VIDEO fetch failed. Engaging fail-safe fallback."
-                fallback_asset video
-              fi
-            fi
-
-          else
-            echo "📁 [SA] LOCAL MODE active. Verifying repository assets..."
-            MISSING=false
-
-            if [ "$NEEDS_PHOTO" = "true" ]; then
-              if [ ! -f "${PHOTO_FILENAME}" ]; then
-                echo "❌ [SA] FATAL: Photo file '${PHOTO_FILENAME}' NOT FOUND in repository root!" >&2
-                MISSING=true
-              else
-                local_size=$(du -sh "${PHOTO_FILENAME}" | awk '{print $1}')
-                echo "✅ [SA] Photo file found: ${PHOTO_FILENAME} (${local_size})"
-                [ "${PHOTO_FILENAME}" != "live_photo.jpg" ] && cp "${PHOTO_FILENAME}" live_photo.jpg
-              fi
-            fi
-
-            if [ "$NEEDS_VIDEO" = "true" ]; then
-              if [ ! -f "${VIDEO_FILENAME}" ]; then
-                echo "❌ [SA] FATAL: Video file '${VIDEO_FILENAME}' NOT FOUND in repository root!" >&2
-                MISSING=true
-              else
-                local_size=$(du -sh "${VIDEO_FILENAME}" | awk '{print $1}')
-                echo "✅ [SA] Video file found: ${VIDEO_FILENAME} (${local_size})"
-                [ "${VIDEO_FILENAME}" != "live_video.mp4" ] && cp "${VIDEO_FILENAME}" live_video.mp4
-              fi
-            fi
-
-            if [ "$MISSING" = "true" ]; then
-              echo "[SA_STATUS:FAILED:Required media files missing from repository]"
-              exit 1
+          # ---- Resolve photo list (comma-separated slideshow support) ----
+          PHOTO_LIST=""
+          if [ "$NEEDS_PHOTO" = "true" ]; then
+            if [ "$DRIVE_MODE" = "true" ]; then
+              if [ -z "$PHOTO_DRIVE_URL" ]; then echo "[SA_STATUS:FAILED:photo_drive_url missing for mode ${ASSET_MODE}]"; exit 1; fi
+              download_from_drive "$PHOTO_DRIVE_URL" "live_photo.jpg" "PHOTO" || synth_photo
+              file live_photo.jpg | grep -qiE 'image|jpeg|png|jpg' || synth_photo
+              PHOTO_LIST="live_photo.jpg"
+            else
+              IFS=',' read -ra PARR <<< "$PHOTO_FILENAME"
+              for raw in "${PARR[@]}"; do
+                f="$(echo "$raw" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+                [ -z "$f" ] && continue
+                if [ -f "$f" ] && [ -s "$f" ]; then
+                  PHOTO_LIST="${PHOTO_LIST}${PHOTO_LIST:+,}${f}"
+                  echo "[SA] Photo asset found: ${f} ($(du -sh "$f" | awk '{print $1}'))"
+                else
+                  echo "WARN [SA] Photo '${f}' not found in repo root — skipping."
+                fi
+              done
+              if [ -z "$PHOTO_LIST" ]; then synth_photo; PHOTO_LIST="live_photo.jpg"; fi
             fi
           fi
 
-          echo ""
-          echo "✅ [SA] All required assets acquired and ready."
-          echo ""
+          # ---- Resolve video ----
+          if [ "$NEEDS_VIDEO" = "true" ]; then
+            if [ "$DRIVE_MODE" = "true" ]; then
+              if [ -z "$VIDEO_DRIVE_URL" ]; then echo "[SA_STATUS:FAILED:video_drive_url missing for mode ${ASSET_MODE}]"; exit 1; fi
+              download_from_drive "$VIDEO_DRIVE_URL" "live_video.mp4" "VIDEO" || synth_video
+            else
+              if [ -f "$VIDEO_FILENAME" ] && [ -s "$VIDEO_FILENAME" ]; then
+                [ "$VIDEO_FILENAME" != "live_video.mp4" ] && cp -f "$VIDEO_FILENAME" live_video.mp4
+                echo "[SA] Video asset found: ${VIDEO_FILENAME} ($(du -sh live_video.mp4 | awk '{print $1}'))"
+              else
+                echo "[SA_STATUS:FAILED:Video file '${VIDEO_FILENAME}' not found in repository root]"
+                exit 1
+              fi
+            fi
+          fi
+
+          echo "photo_list=${PHOTO_LIST}" >> "$GITHUB_OUTPUT"
+          echo "[SA] Asset acquisition complete. photo_list=[${PHOTO_LIST}]"
 
 
       # ============================================================
-      # STEP 5 — Probe media files and calculate stream timing plan
+      # STEP 5 — Probe media and compute the timing plan
+      #   photo_dur = total_seconds - video_dur   (dynamic split)
       # ============================================================
       - name: "[5/8] Probe assets and calculate timing plan"
         id: timing
         shell: bash
         run: |
+          set -uo pipefail
           ASSET_MODE="${{ steps.params.outputs.asset_mode }}"
           TOTAL_MINUTES="${{ steps.params.outputs.total_minutes }}"
           TOTAL_SECONDS=$(( TOTAL_MINUTES * 60 ))
 
-          echo "🎬 [SA] Calculating timing plan for mode: ${ASSET_MODE}"
-          echo "    Total duration: ${TOTAL_MINUTES} min (${TOTAL_SECONDS}s)"
-          echo ""
-
-          VIDEO_DUR_RAW="0"
-          VIDEO_DUR_INT=0
-          VIDEO_DUR_NOISE=2
-          PHOTO_DUR=$TOTAL_SECONDS
-          HAS_AUDIO="false"
+          VIDEO_DUR_RAW="0"; VIDEO_DUR_INT=0; PHOTO_DUR=$TOTAL_SECONDS; HAS_AUDIO="false"
 
           if [ "$ASSET_MODE" = "photo_video" ] || [ "$ASSET_MODE" = "video_only" ]; then
-            echo "🔍 [SA] Probing live_video.mp4 with ffprobe..."
-
-            VIDEO_DUR_RAW=$(ffprobe \
-              -v error \
-              -show_entries format=duration \
-              -of default=noprint_wrappers=1:nokey=1 \
-              live_video.mp4 2>/dev/null)
-
+            echo "[SA] Probing live_video.mp4 with ffprobe..."
+            VIDEO_DUR_RAW=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 live_video.mp4 2>/dev/null)
             if [ -z "$VIDEO_DUR_RAW" ] || [ "$VIDEO_DUR_RAW" = "N/A" ]; then
-              echo "❌ [SA] FATAL: ffprobe could not determine video duration." >&2
-              echo "[SA_STATUS:FAILED:ffprobe failed — live_video.mp4 may be corrupt]"
-              exit 1
+              echo "[SA_STATUS:FAILED:ffprobe failed — live_video.mp4 may be corrupt]"; exit 1
             fi
-
-            HAS_AUDIO_RAW=$(ffprobe \
-              -v error \
-              -select_streams a \
-              -show_entries stream=index \
-              -of csv=p=0 \
-              live_video.mp4 2>/dev/null)
+            HAS_AUDIO_RAW=$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 live_video.mp4 2>/dev/null)
             [ -n "$HAS_AUDIO_RAW" ] && HAS_AUDIO="true" || HAS_AUDIO="false"
-
             VIDEO_DUR_INT=$(python3 -c "print(int(float('${VIDEO_DUR_RAW}'.strip())))")
-            VIDEO_DUR_NOISE=$(( VIDEO_DUR_INT + 2 ))
-
-            echo "    Video duration : ${VIDEO_DUR_INT}s  |  Has audio: ${HAS_AUDIO}"
+            echo "[SA] Video duration: ${VIDEO_DUR_INT}s | has_audio=${HAS_AUDIO}"
           fi
 
           if [ "$ASSET_MODE" = "photo_video" ]; then
             PHOTO_DUR=$(( TOTAL_SECONDS - VIDEO_DUR_INT ))
             if [ "$PHOTO_DUR" -le 10 ]; then
               NEEDED_MIN=$(python3 -c "import math; print(math.ceil((${VIDEO_DUR_INT} + 11) / 60))")
-              echo "❌ [SA] FATAL: video (${VIDEO_DUR_INT}s) is too long for ${TOTAL_SECONDS}s total." >&2
-              echo "[SA_STATUS:FAILED:video too long for chosen duration — increase total_minutes to ${NEEDED_MIN}]"
-              exit 1
+              echo "[SA_STATUS:FAILED:video too long for chosen duration — increase total_minutes to ${NEEDED_MIN}]"; exit 1
             fi
           elif [ "$ASSET_MODE" = "photo_only" ]; then
-            PHOTO_DUR=$TOTAL_SECONDS
-            VIDEO_DUR_INT=0
+            PHOTO_DUR=$TOTAL_SECONDS; VIDEO_DUR_INT=0
           else
             PHOTO_DUR=0
           fi
 
           echo ""
-          echo "┌─────────────────────────────────────────────────┐"
-          echo "│            TIMING PLAN CONFIRMED                │"
-          echo "├─────────────────────────────────────────────────┤"
-          printf "│  Mode          : %-30s │\n" "${ASSET_MODE}"
-          printf "│  📸 Photo phase: %-30s │\n" "${PHOTO_DUR}s"
-          printf "│  🎬 Video phase: %-30s │\n" "${VIDEO_DUR_INT}s"
-          printf "│  ⏱  Total      : %-30s │\n" "${TOTAL_SECONDS}s (${TOTAL_MINUTES}m)"
-          printf "│  🔊 Video audio: %-30s │\n" "${HAS_AUDIO}"
-          echo "└─────────────────────────────────────────────────┘"
-          echo ""
+          echo "------------- TIMING PLAN -------------"
+          printf "  Mode        : %s\n" "${ASSET_MODE}"
+          printf "  Photo phase : %ss\n" "${PHOTO_DUR}"
+          printf "  Video phase : %ss\n" "${VIDEO_DUR_INT}"
+          printf "  Total       : %ss (%sm)\n" "${TOTAL_SECONDS}" "${TOTAL_MINUTES}"
+          printf "  Video audio : %s\n" "${HAS_AUDIO}"
+          echo "--------------------------------------"
 
-          echo "video_dur=${VIDEO_DUR_RAW}"         >> "$GITHUB_OUTPUT"
-          echo "video_dur_int=${VIDEO_DUR_INT}"     >> "$GITHUB_OUTPUT"
-          echo "video_dur_noise=${VIDEO_DUR_NOISE}" >> "$GITHUB_OUTPUT"
-          echo "photo_dur=${PHOTO_DUR}"             >> "$GITHUB_OUTPUT"
-          echo "total_seconds=${TOTAL_SECONDS}"     >> "$GITHUB_OUTPUT"
-          echo "has_audio=${HAS_AUDIO}"             >> "$GITHUB_OUTPUT"
+          {
+            echo "video_dur=${VIDEO_DUR_RAW}"
+            echo "video_dur_int=${VIDEO_DUR_INT}"
+            echo "photo_dur=${PHOTO_DUR}"
+            echo "total_seconds=${TOTAL_SECONDS}"
+            echo "has_audio=${HAS_AUDIO}"
+          } >> "$GITHUB_OUTPUT"
 
 
       # ============================================================
-      # STEP 6 — Handle scheduled start time
+      # STEP 6 — Zero-drift scheduled start
+      #   Absolute-epoch convergence loop eliminates sleep drift.
       # ============================================================
-      - name: "[6/8] Handle scheduled start time"
+      - name: "[6/8] Handle scheduled start time (zero-drift)"
         shell: bash
         run: |
+          set -uo pipefail
           START_AT="${{ steps.params.outputs.start_at }}"
+          if [ -z "$START_AT" ]; then echo "[SA] No schedule — launching immediately."; exit 0; fi
+          echo "[SA] Scheduled start (ISO): ${START_AT}"
 
-          if [ -z "$START_AT" ]; then
-            echo "⏰ [SA] No scheduled start time — launching immediately."
-            exit 0
-          fi
-
-          echo "⏰ [SA] Scheduled start time: ${START_AT}"
-
-          DELAY=$(python3 - <<PYEOF
-          import datetime, sys
+          TARGET_EPOCH=$(START_AT="$START_AT" python3 - <<'PYEOF'
+          import datetime, os, sys
+          s = os.environ.get("START_AT", "").strip()
           try:
-              s = "${START_AT}".strip()
               if not s: print(0); sys.exit(0)
               if s.endswith('Z'): s = s[:-1] + '+00:00'
-              target = datetime.datetime.fromisoformat(s)
-              if target.tzinfo is None:
-                  target = target.replace(tzinfo=datetime.timezone.utc)
-              now = datetime.datetime.now(datetime.timezone.utc)
-              delay = (target - now).total_seconds()
-              print(max(0, int(delay)))
+              t = datetime.datetime.fromisoformat(s)
+              if t.tzinfo is None: t = t.replace(tzinfo=datetime.timezone.utc)
+              print(int(t.timestamp()))
           except Exception as e:
-              print(f"[SA][WARN] Could not parse start_at: {e}", file=sys.stderr)
-              print(0)
+              print(f"[SA][WARN] Could not parse start_at: {e}", file=sys.stderr); print(0)
           PYEOF
           )
 
-          if [ "$DELAY" -gt 0 ]; then
-            MAX_WAIT=18000
-            [ "$DELAY" -gt "$MAX_WAIT" ] && { echo "⚠  [SA] Wait exceeds 5h cap. Capping."; DELAY=$MAX_WAIT; }
-            H=$(( DELAY/3600 )); M=$(( (DELAY%3600)/60 )); S=$(( DELAY%60 ))
-            echo "⏰ [SA] Waiting ${H}h ${M}m ${S}s until scheduled start..."
-            sleep "$DELAY"
-            echo "✅ [SA] Scheduled start time reached. Proceeding."
-          else
-            echo "✅ [SA] Scheduled time is in the past — starting immediately."
+          if [ "$TARGET_EPOCH" -le 0 ]; then echo "[SA] Invalid/immediate schedule — starting now."; exit 0; fi
+          NOW=$(date +%s)
+          MAX_WAIT=18000
+          if [ "$(( TARGET_EPOCH - NOW ))" -gt "$MAX_WAIT" ]; then
+            echo "WARN [SA] Wait exceeds 5h cap — capping schedule window."
+            TARGET_EPOCH=$(( NOW + MAX_WAIT ))
           fi
+          echo "[SA_STATUS:SCHEDULED]"
+          while :; do
+            NOW=$(date +%s)
+            REMAIN=$(( TARGET_EPOCH - NOW ))
+            [ "$REMAIN" -le 0 ] && break
+            H=$(( REMAIN/3600 )); M=$(( (REMAIN%3600)/60 )); S=$(( REMAIN%60 ))
+            printf "[SA] Waiting %02dh %02dm %02ds until scheduled start...\n" "$H" "$M" "$S"
+            if   [ "$REMAIN" -gt 120 ]; then sleep 60
+            elif [ "$REMAIN" -gt 10 ];  then sleep 5
+            else sleep 1; fi
+          done
+          echo "[SA] Scheduled start reached (zero-drift). Proceeding."
 
 
       # ============================================================
-      # STEP 7 — THE CORE ENGINE: Adaptive FFmpeg stream
+      # STEP 7 — CORE ENGINE: adaptive FFmpeg stream
       #
-      # THREE fully dynamic FFmpeg command builders, one per asset_mode.
-      # Every mode uses a single uninterrupted FFmpeg process.
+      #  A Python builder (build_ffmpeg.py) emits the exact FFmpeg argv
+      #  as JSON for the requested mode + duration. This makes the
+      #  multi-photo slideshow, ASMR audio, and photo/video concat
+      #  fully deterministic and metacharacter-safe.
       #
-      # RTMP RECONNECT WATCHDOG FLAGS (preserved as mandated):
-      #   -reconnect 1 -reconnect_at_eof 1 -reconnect_streamed 1
-      #   These ensure the stream auto-recovers from transient drops.
+      #  ASMR AMBIENT ENGINE (ambient_audio=true):
+      #    engine rumble  : anoisesrc brown -> lowpass  (continuous)
+      #    street air      : anoisesrc pink  -> band-pass hiss
+      #    distant horns   : aevalsrc dual sine gated by a slow LFO
+      #    -> amix (3 inputs) -> lowpass polish
+      #  Quiet floor (ambient_audio=false): inaudible white noise.
       #
-      # AMBIENT AUDIO:
-      #   true  → pink+white noise mix simulating outdoor traffic
-      #   false → inaudible -60 dB white noise floor (YouTube-safe)
-      #
-      # CONNECTION DETECTION (STRICT "NO FALSE LIVE" FIX):
-      #   [SA_STATUS:HANDSHAKE_OK] is emitted only after FFmpeg stderr
-      #   confirms actual packet transmission.  The UI MUST wait for
-      #   this before flipping the badge to ONLINE.
-      #
-      # WATCHDOG:
-      #   SIGTERM fires exactly when total_minutes (capped at 345)
-      #   elapses, or when stop_at is reached, whichever is earlier.
+      #  TELEMETRY: monitor emits [SA_TELEMETRY] frame/fps/bitrate/speed/time.
+      #  HANDSHAKE_OK is emitted only after real packet output is seen.
       # ============================================================
       - name: "[7/8] Launch adaptive FFmpeg stream"
         id: ffmpeg_stream
         shell: bash
         run: |
-          # ============================================================
-          # RESILIENCE POLICY
-          # We manage every error explicitly and ALWAYS exit 0 at the end
-          # so Step 8 (clean teardown) runs and GitHub marks the job as
-          # SUCCESS for normal timed streams. Disabling -e/-o pipefail is
-          # required because grep/ps in the monitor legitimately return
-          # non-zero (no-match) and MUST NOT abort the step.
-          # ============================================================
           set +e
           set +o pipefail
 
@@ -800,40 +543,168 @@ jobs:
           HEIGHT="${{ steps.params.outputs.height }}"
           RATIO="${{ steps.params.outputs.ratio }}"
           PLATFORM="${{ steps.params.outputs.platform }}"
-          TOTAL_MINUTES="${{ steps.params.outputs.total_minutes }}"
-          STOP_AT="${{ steps.params.outputs.stop_at }}"
           ASSET_MODE="${{ steps.params.outputs.asset_mode }}"
           AMBIENT_AUDIO="${{ steps.params.outputs.ambient_audio }}"
+          PHOTO_LIST="${{ steps.assets.outputs.photo_list }}"
           PHOTO_DUR="${{ steps.timing.outputs.photo_dur }}"
           VIDEO_DUR_INT="${{ steps.timing.outputs.video_dur_int }}"
-          VIDEO_DUR_NOISE="${{ steps.timing.outputs.video_dur_noise }}"
           TOTAL_SECONDS="${{ steps.timing.outputs.total_seconds }}"
           HAS_AUDIO="${{ steps.timing.outputs.has_audio }}"
+          STOP_AT="${{ steps.params.outputs.stop_at }}"
           export STOP_AT
 
           FFMPEG_LOG="/tmp/ffmpeg_stderr.log"
           PID_FILE="/tmp/ffmpeg_current.pid"
-          DONE_FILE="/tmp/sa_stream_done"
-          FAIL_FILE="/tmp/sa_setup_failed"
-          rm -f "$PID_FILE" "$DONE_FILE" "$FAIL_FILE"
-          : > "$FFMPEG_LOG"
+          DONE_FILE="/tmp/sa_done"; FAIL_FILE="/tmp/sa_fail"
+          rm -f "$PID_FILE" "$DONE_FILE" "$FAIL_FILE"; : > "$FFMPEG_LOG"
           FFMPEG_EXIT=0
-
           ASSET_MODE_UPPER=$(printf '%s' "$ASSET_MODE" | tr '[:lower:]' '[:upper:]')
-          if [ "$ASSET_MODE" = "video_only" ]; then INITIAL_PHASE="VIDEO"; else INITIAL_PHASE="PHOTO"; fi
+          [ "$ASSET_MODE" = "video_only" ] && INITIAL_PHASE="VIDEO" || INITIAL_PHASE="PHOTO"
 
-          QUIET_NOISE="anoisesrc=r=44100:amplitude=0.001:color=white"
-          AMBIENT_NOISE="anoisesrc=r=44100:amplitude=0.09:color=pink,lowpass=f=400,highpass=f=40,volume=1.6,aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100"
-          if [ "$AMBIENT_AUDIO" = "true" ]; then
-            PHOTO_AUDIO_SRC="$AMBIENT_NOISE"; echo "[SA] Ambient traffic audio ENABLED."
-          else
-            PHOTO_AUDIO_SRC="$QUIET_NOISE"; echo "[SA] Standard quiet noise floor."
-          fi
+          # ---------- Write the Python FFmpeg command builder ----------
+          cat > /tmp/build_ffmpeg.py <<'PYEOF'
+          import json, os, sys
 
-          vf_template() { local IN="$1" OUT="$2"; echo "[${IN}]scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease,pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=30,format=yuv420p[${OUT}]"; }
-          af_template() { local IN="$1" OUT="$2"; echo "[${IN}]aresample=async=1:first_pts=0,aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100[${OUT}]"; }
+          W       = os.environ["WIDTH"]
+          H       = os.environ["HEIGHT"]
+          MODE    = os.environ["ASSET_MODE"]
+          AMBIENT = os.environ.get("AMBIENT_AUDIO", "false") == "true"
+          HAS_AUD = os.environ.get("HAS_AUDIO", "false") == "true"
+          PHOTOS  = [p.strip() for p in os.environ.get("PHOTO_LIST", "").split(",") if p.strip()]
+          VIDEO   = "live_video.mp4"
+          PHOTO_DUR = int(os.environ.get("PHOTO_DUR", "0") or 0)
+          VIDEO_DUR = int(os.environ.get("VIDEO_DUR_INT", "0") or 0)
+          TOTAL     = int(os.environ.get("TOTAL_SECONDS", "0") or 0)
+          CUT       = int(os.environ.get("STREAM_CUT", "0") or 0)
+          FILL      = os.environ.get("FILL", "false") == "true"
+          RTMP      = os.environ["RTMP_URL"]
 
-          # ---- Duration model (second-accurate). stop_at wins if earlier ----
+          QUIET = "anoisesrc=r=44100:amplitude=0.001:color=white"
+          # Natural road/street ASMR bed: engine rumble + street air + gated distant horns.
+          ASMR = (
+              "anoisesrc=r=44100:c=brown:a=0.30,lowpass=f=150,volume=1.6[eng];"
+              "anoisesrc=r=44100:c=pink:a=0.05,highpass=f=700,lowpass=f=5200,volume=0.5[air];"
+              "aevalsrc='(0.10*sin(2*PI*277*t)+0.08*sin(2*PI*233*t))"
+              "*max(0\\,sin(2*PI*0.028*t))':s=44100:c=stereo[horn];"
+              "[eng][air][horn]amix=inputs=3:duration=longest:normalize=0,"
+              "lowpass=f=6000,volume=1.3,"
+              "aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100"
+          )
+          AMBIENT_SRC = ASMR if AMBIENT else QUIET
+
+          def vscale(inp, out):
+              return (f"[{inp}]scale={W}:{H}:force_original_aspect_ratio=decrease,"
+                      f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=30,"
+                      f"format=yuv420p[{out}]")
+
+          def afmt(inp, out):
+              return (f"[{inp}]aresample=async=1:first_pts=0,"
+                      f"aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100[{out}]")
+
+          ENCODE = [
+              "-t", str(CUT),
+              "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
+              "-profile:v", "main", "-level:v", "4.0",
+              "-b:v", "2500k", "-minrate", "2500k", "-maxrate", "2500k", "-bufsize", "5000k",
+              "-pix_fmt", "yuv420p", "-r", "30", "-g", "60", "-keyint_min", "60",
+              "-sc_threshold", "0", "-x264opts", "no-scenecut",
+              "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
+              "-max_muxing_queue_size", "1024", "-fflags", "+genpts",
+              "-f", "flv", "-flvflags", "no_duration_filesize",
+              "-rw_timeout", "15000000",
+              "-reconnect", "1", "-reconnect_at_eof", "1",
+              "-reconnect_streamed", "1", "-reconnect_delay_max", "5",
+              RTMP,
+          ]
+
+          inputs, fc, idx = [], [], 0
+
+          def add_photo_slideshow(seg_total, out_label):
+              """Loop N photos as an even slideshow spanning seg_total seconds."""
+              global idx
+              n = max(1, len(PHOTOS))
+              per = max(1, seg_total // n)
+              vlabels = []
+              for i, ph in enumerate(PHOTOS):
+                  dur = per if i < n - 1 else max(1, seg_total - per * (n - 1))
+                  inputs.extend(["-re", "-loop", "1", "-framerate", "30", "-t", str(dur), "-i", ph])
+                  fc.append(vscale(f"{idx}:v", f"vph{i}"))
+                  vlabels.append(f"[vph{i}]")
+                  idx += 1
+              if n == 1:
+                  fc[-1] = vscale(f"{idx-1}:v", out_label)
+              else:
+                  fc.append("".join(vlabels) + f"concat=n={n}:v=1:a=0[{out_label}]")
+
+          if FILL:
+              # Watchdog fill: loop the primary asset to burn remaining time.
+              if MODE == "photo_only" or (MODE == "photo_video"):
+                  inputs.extend(["-re", "-loop", "1", "-framerate", "30", "-i", PHOTOS[0]])
+                  fc.append(vscale("0:v", "vout"))
+                  inputs.extend(["-f", "lavfi", "-i", AMBIENT_SRC])
+                  fc.append(afmt("1:a", "aout"))
+              else:
+                  inputs.extend(["-stream_loop", "-1", "-re", "-i", VIDEO])
+                  fc.append(vscale("0:v", "vout"))
+                  if HAS_AUD:
+                      fc.append(afmt("0:a", "aout"))
+                  else:
+                      inputs.extend(["-f", "lavfi", "-i", AMBIENT_SRC]); fc.append(afmt("1:a", "aout"))
+              print(json.dumps(["-hide_banner", "-y"] + inputs +
+                    ["-filter_complex", ";".join(fc), "-map", "[vout]", "-map", "[aout]"] + ENCODE))
+              sys.exit(0)
+
+          if MODE == "photo_only":
+              add_photo_slideshow(TOTAL, "vout")
+              inputs.extend(["-f", "lavfi", "-t", str(TOTAL), "-i", AMBIENT_SRC])
+              fc.append(afmt(f"{idx}:a", "aout")); idx += 1
+              maps = ["-map", "[vout]", "-map", "[aout]"]
+
+          elif MODE == "video_only":
+              inputs.extend(["-stream_loop", "-1", "-re", "-i", VIDEO])
+              fc.append(vscale("0:v", "vout")); idx += 1
+              if HAS_AUD:
+                  fc.append(afmt("0:a", "aout"))
+              else:
+                  inputs.extend(["-f", "lavfi", "-i", AMBIENT_SRC])
+                  fc.append(afmt(f"{idx}:a", "aout")); idx += 1
+              maps = ["-map", "[vout]", "-map", "[aout]"]
+
+          else:  # photo_video
+              add_photo_slideshow(PHOTO_DUR, "vphoto")
+              inputs.extend(["-f", "lavfi", "-t", str(PHOTO_DUR), "-i", AMBIENT_SRC])
+              photo_audio_idx = idx; idx += 1
+              inputs.extend(["-re", "-i", VIDEO])
+              video_idx = idx; idx += 1
+              fc.append(vscale(f"{video_idx}:v", "vvid"))
+              fc.append(afmt(f"{photo_audio_idx}:a", "aphoto"))
+              if HAS_AUD:
+                  fc.append(afmt(f"{video_idx}:a", "avid"))
+              else:
+                  inputs.extend(["-f", "lavfi", "-t", str(VIDEO_DUR), "-i", QUIET])
+                  fc.append(afmt(f"{idx}:a", "avid")); idx += 1
+              fc.append("[vphoto][aphoto][vvid][avid]concat=n=2:v=1:a=1[vout][aout]")
+              maps = ["-map", "[vout]", "-map", "[aout]"]
+
+          print(json.dumps(["-hide_banner", "-y"] + inputs +
+                ["-filter_complex", ";".join(fc)] + maps + ENCODE))
+          PYEOF
+
+          export WIDTH HEIGHT ASSET_MODE AMBIENT_AUDIO HAS_AUDIO PHOTO_LIST PHOTO_DUR VIDEO_DUR_INT TOTAL_SECONDS RTMP_URL
+
+          run_ffmpeg() {
+            local FILL_FLAG="$1"
+            local ARGS_JSON
+            ARGS_JSON=$(STREAM_CUT="$STREAM_CUT" FILL="$FILL_FLAG" python3 /tmp/build_ffmpeg.py 2>/tmp/build_err.log)
+            if [ -z "$ARGS_JSON" ]; then
+              echo "[SA_STATUS:FAILED:FFmpeg command builder failed]"; cat /tmp/build_err.log >&2; touch "$FAIL_FILE"; return 1
+            fi
+            mapfile -t FF_ARGS < <(printf '%s' "$ARGS_JSON" | jq -r '.[]')
+            ffmpeg "${FF_ARGS[@]}" >>"$FFMPEG_LOG" 2>&1 &
+            local P=$!; echo "$P" > "$PID_FILE"; wait "$P"; return $?
+          }
+
+          # ---- Duration model (stop_at wins if earlier) ----
           TARGET_SECONDS="$TOTAL_SECONDS"
           if [ -n "$STOP_AT" ]; then
             STOP_SECS=$(python3 - <<'PYEOF'
@@ -843,15 +714,13 @@ jobs:
               if s.endswith("Z"): s = s[:-1] + "+00:00"
               t = datetime.datetime.fromisoformat(s)
               if t.tzinfo is None: t = t.replace(tzinfo=datetime.timezone.utc)
-              now = datetime.datetime.now(datetime.timezone.utc)
-              print(max(0, int((t - now).total_seconds())))
+              print(max(0, int((t - datetime.datetime.now(datetime.timezone.utc)).total_seconds())))
           except Exception:
               print(-1)
           PYEOF
           )
             if [ "$STOP_SECS" -gt 0 ] && [ "$STOP_SECS" -lt "$TARGET_SECONDS" ]; then
-              echo "[SA] Hard stop_at deadline is earlier: ${STOP_SECS}s from now."
-              TARGET_SECONDS="$STOP_SECS"
+              echo "[SA] stop_at deadline earlier: ${STOP_SECS}s."; TARGET_SECONDS="$STOP_SECS"
             fi
           fi
           HARD_TIMEOUT=$(( TARGET_SECONDS + 8 ))
@@ -860,142 +729,23 @@ jobs:
           END_HARD_EPOCH=$(( START_EPOCH + HARD_TIMEOUT ))
 
           echo ""
-          echo "[SA] LAUNCHING ADAPTIVE FFMPEG STREAMING SESSION"
-          printf "[SA]  Platform     : %s | %s | %sx%s\n" "$PLATFORM" "$RATIO" "$WIDTH" "$HEIGHT"
-          printf "[SA]  Asset mode   : %s\n" "$ASSET_MODE"
-          printf "[SA]  Photo phase  : %ss\n" "$PHOTO_DUR"
-          printf "[SA]  Video phase  : %ss (audio: %s)\n" "$VIDEO_DUR_INT" "$HAS_AUDIO"
-          printf "[SA]  Target dur   : %ss (hard cap %ss)\n" "$TARGET_SECONDS" "$HARD_TIMEOUT"
-          printf "[SA]  Ambient      : %s\n" "$AMBIENT_AUDIO"
-          printf "[SA]  RTMP target  : %s****\n" "$RTMP_BASE"
-          echo ""
+          echo "[SA] LAUNCHING ULTIMATE FFMPEG SESSION"
+          printf "[SA]  Platform   : %s | %s | %sx%s\n" "$PLATFORM" "$RATIO" "$WIDTH" "$HEIGHT"
+          printf "[SA]  Asset mode : %s\n" "$ASSET_MODE"
+          printf "[SA]  Photo phase: %ss (%s image(s))\n" "$PHOTO_DUR" "$(echo "$PHOTO_LIST" | awk -F',' '{print NF}')"
+          printf "[SA]  Video phase: %ss (audio: %s)\n" "$VIDEO_DUR_INT" "$HAS_AUDIO"
+          printf "[SA]  Target dur : %ss (hard %ss)\n" "$TARGET_SECONDS" "$HARD_TIMEOUT"
+          printf "[SA]  ASMR       : %s\n" "$AMBIENT_AUDIO"
           echo "[SA_STATUS:CONNECTING]"
 
-          # ---- Shared FFmpeg launcher: streams exactly $STREAM_CUT s then exits 0 ----
-          run_ffmpeg_with_args() {
-            ffmpeg -hide_banner -y \
-              "$@" \
-              -t "${STREAM_CUT}" \
-              -c:v libx264 -preset veryfast -tune zerolatency \
-              -profile:v main -level:v 4.0 \
-              -b:v 2500k -minrate 2500k -maxrate 2500k -bufsize 5000k \
-              -pix_fmt yuv420p -r 30 -g 60 -keyint_min 60 -sc_threshold 0 -x264opts no-scenecut \
-              -c:a aac -b:a 128k -ar 44100 -ac 2 \
-              -max_muxing_queue_size 1024 \
-              -fflags +genpts \
-              -f flv -flvflags no_duration_filesize \
-              -rw_timeout 15000000 \
-              -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 \
-              "${RTMP_URL}" >>"$FFMPEG_LOG" 2>&1 &
-            local P=$!
-            echo "$P" > "$PID_FILE"
-            wait "$P"
-            return $?
-          }
-
-          # ---- MODE A: PHOTO + VIDEO (single continuous concat pipe) ----
-          # FIX: no-audio substitute silence is now exactly VIDEO_DUR_INT
-          # (was VIDEO_DUR_INT+2, which froze ~2s and stalled the handoff);
-          # +genpts keeps timestamps monotonic across the concat boundary.
-          run_photo_video_mode() {
-            local VFILTER_PHOTO; VFILTER_PHOTO=$(vf_template "0:v" "v0")
-            local VFILTER_VIDEO; VFILTER_VIDEO=$(vf_template "2:v" "v1")
-            local AFILTER_PHOTO; AFILTER_PHOTO=$(af_template "1:a" "a0")
-            if [ "$HAS_AUDIO" = "true" ]; then
-              local FC="${VFILTER_PHOTO};${VFILTER_VIDEO};${AFILTER_PHOTO};[2:a]aresample=async=1:first_pts=0,aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100[a1];[v0][a0][v1][a1]concat=n=2:v=1:a=1[vout][aout]"
-              run_ffmpeg_with_args \
-                -re -loop 1 -framerate 30 -t "${PHOTO_DUR}" -i live_photo.jpg \
-                -f lavfi -t "${PHOTO_DUR}" -i "${PHOTO_AUDIO_SRC}" \
-                -re -i live_video.mp4 \
-                -filter_complex "${FC}" \
-                -map "[vout]" -map "[aout]"
-            else
-              local FC="${VFILTER_PHOTO};${VFILTER_VIDEO};${AFILTER_PHOTO};[3:a]aresample=async=1:first_pts=0,aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100[a1];[v0][a0][v1][a1]concat=n=2:v=1:a=1[vout][aout]"
-              run_ffmpeg_with_args \
-                -re -loop 1 -framerate 30 -t "${PHOTO_DUR}" -i live_photo.jpg \
-                -f lavfi -t "${PHOTO_DUR}" -i "${PHOTO_AUDIO_SRC}" \
-                -re -i live_video.mp4 \
-                -f lavfi -t "${VIDEO_DUR_INT}" -i "${QUIET_NOISE}" \
-                -filter_complex "${FC}" \
-                -map "[vout]" -map "[aout]"
-            fi
-          }
-
-          # ---- MODE B: PHOTO ONLY ----
-          run_photo_only_mode() {
-            local VFILTER; VFILTER=$(vf_template "0:v" "vout")
-            local AFILTER; AFILTER=$(af_template "1:a" "aout")
-            echo "[SA] PHOTO ONLY mode: looping photo."
-            run_ffmpeg_with_args \
-              -re -loop 1 -framerate 30 -t "${TOTAL_SECONDS}" -i live_photo.jpg \
-              -f lavfi -t "${TOTAL_SECONDS}" -i "${PHOTO_AUDIO_SRC}" \
-              -filter_complex "${VFILTER};${AFILTER}" \
-              -map "[vout]" -map "[aout]"
-          }
-
-          # ---- MODE C: VIDEO ONLY (infinite loop, cut by output -t) ----
-          run_video_only_mode() {
-            echo "[SA] VIDEO ONLY mode: looping video."
-            local VFILTER; VFILTER=$(vf_template "0:v" "vout")
-            if [ "$HAS_AUDIO" = "true" ]; then
-              local AFILTER; AFILTER=$(af_template "0:a" "aout")
-              run_ffmpeg_with_args \
-                -stream_loop -1 -re -i live_video.mp4 \
-                -filter_complex "${VFILTER};${AFILTER}" \
-                -map "[vout]" -map "[aout]"
-            else
-              local AFILTER; AFILTER=$(af_template "1:a" "aout")
-              run_ffmpeg_with_args \
-                -stream_loop -1 -re -i live_video.mp4 \
-                -f lavfi -i "${PHOTO_AUDIO_SRC}" \
-                -filter_complex "${VFILTER};${AFILTER}" \
-                -map "[vout]" -map "[aout]"
-            fi
-          }
-
-          # ---- FILL MODE: watchdog auto-restart after an early drop ----
-          run_fill_mode() {
-            local VFILTER AFILTER
-            if [ "$ASSET_MODE" = "photo_only" ]; then
-              VFILTER=$(vf_template "0:v" "vout"); AFILTER=$(af_template "1:a" "aout")
-              run_ffmpeg_with_args \
-                -re -loop 1 -framerate 30 -i live_photo.jpg \
-                -f lavfi -i "${PHOTO_AUDIO_SRC}" \
-                -filter_complex "${VFILTER};${AFILTER}" \
-                -map "[vout]" -map "[aout]"
-            else
-              VFILTER=$(vf_template "0:v" "vout")
-              if [ "$HAS_AUDIO" = "true" ]; then
-                AFILTER=$(af_template "0:a" "aout")
-                run_ffmpeg_with_args \
-                  -stream_loop -1 -re -i live_video.mp4 \
-                  -filter_complex "${VFILTER};${AFILTER}" \
-                  -map "[vout]" -map "[aout]"
-              else
-                AFILTER=$(af_template "1:a" "aout")
-                run_ffmpeg_with_args \
-                  -stream_loop -1 -re -i live_video.mp4 \
-                  -f lavfi -i "${PHOTO_AUDIO_SRC}" \
-                  -filter_complex "${VFILTER};${AFILTER}" \
-                  -map "[vout]" -map "[aout]"
-              fi
-            fi
-          }
-
-          # ---- Hard-deadline killer (backup watchdog) ----
           deadline_killer() {
             while [ ! -f "$DONE_FILE" ]; do
               local NOW; NOW=$(date +%s)
               if [ "$NOW" -ge "$END_HARD_EPOCH" ]; then
                 echo "[SA_STATUS:WATCHDOG_TIMEOUT]"
-                echo "[SA] Hard deadline (${HARD_TIMEOUT}s) reached. Stopping FFmpeg."
                 if [ -f "$PID_FILE" ]; then
                   local P; P=$(cat "$PID_FILE" 2>/dev/null)
-                  if [ -n "$P" ]; then
-                    kill -TERM "$P" 2>/dev/null
-                    sleep 8
-                    kill -9 "$P" 2>/dev/null
-                  fi
+                  [ -n "$P" ] && { kill -TERM "$P" 2>/dev/null; sleep 8; kill -9 "$P" 2>/dev/null; }
                 fi
                 return
               fi
@@ -1003,22 +753,17 @@ jobs:
             done
           }
 
-          # ---- Background monitor: UI markers + CPU/MEM health (no lookbehind) ----
           monitor_stream() {
-            local CONNECTED=false LAST_FRAME=0 CHECK=0 VIDEO_PHASE=false
+            local CONNECTED=false LAST_TELEM="" CHECK=0 VIDEO_PHASE=false
             while [ ! -f "$DONE_FILE" ]; do
-              sleep 5
-              CHECK=$(( CHECK + 1 ))
+              sleep 4; CHECK=$(( CHECK + 1 ))
               [ -f "$FFMPEG_LOG" ] || continue
+
               if ! $CONNECTED; then
                 if grep -qiE 'connection refused|connection timed out|no route to host|failed to connect|error opening|could not write header|handshake failed|403 forbidden|401 unauthorized|invalid stream key|netstream\.publish\.badname|netconnection\.connect\.rejected' "$FFMPEG_LOG" 2>/dev/null; then
                   FAIL_LINE=$(grep -iE 'connection refused|timed out|failed to connect|error opening|could not write|handshake|403|401|invalid stream key|badname|rejected' "$FFMPEG_LOG" | tail -1 | sed 's/^[[:space:]]*//' | cut -c1-140)
-                  echo "[SA_STATUS:FAILED:${FAIL_LINE}]"
-                  touch "$FAIL_FILE"
-                  return
+                  echo "[SA_STATUS:FAILED:${FAIL_LINE}]"; touch "$FAIL_FILE"; return
                 fi
-              fi
-              if ! $CONNECTED; then
                 if grep -qE 'Output #0|frame=[[:space:]]*[1-9]' "$FFMPEG_LOG" 2>/dev/null; then
                   CONNECTED=true
                   echo "[SA_STATUS:HANDSHAKE_OK]"
@@ -1027,76 +772,49 @@ jobs:
                   echo "[SA_STATUS:PHASE:${INITIAL_PHASE}]"
                 fi
               fi
+
               if $CONNECTED && [ "$ASSET_MODE" = "photo_video" ] && ! $VIDEO_PHASE; then
                 local NOW EL; NOW=$(date +%s); EL=$(( NOW - START_EPOCH ))
-                if [ "$EL" -ge "$PHOTO_DUR" ]; then
-                  VIDEO_PHASE=true
-                  echo "[SA_STATUS:PHASE:VIDEO]"
-                fi
+                if [ "$EL" -ge "$PHOTO_DUR" ]; then VIDEO_PHASE=true; echo "[SA_STATUS:PHASE:VIDEO]"; fi
               fi
-              if $CONNECTED && [ $(( CHECK % 3 )) -eq 0 ]; then
-                FRAME=$(grep -oE 'frame=[[:space:]]*[0-9]+' "$FFMPEG_LOG" | tail -1 | grep -oE '[0-9]+' | tail -1)
-                if [ -n "$FRAME" ] && [ "$FRAME" != "$LAST_FRAME" ]; then
-                  echo "[SA_STATUS:FRAME_COUNT:${FRAME}]"
-                  LAST_FRAME="$FRAME"
-                fi
-              fi
-              if [ $(( CHECK % 2 )) -eq 0 ] && [ -f "$PID_FILE" ]; then
-                local P; P=$(cat "$PID_FILE" 2>/dev/null)
-                if [ -n "$P" ] && kill -0 "$P" 2>/dev/null; then
-                  STAT=$(ps -o %cpu=,%mem=,rss= -p "$P" 2>/dev/null | tr -s ' ' | sed 's/^ //')
-                  [ -n "$STAT" ] && echo "[SA] FFmpeg pid ${P} health (cpu% mem% rssKB): ${STAT}"
+
+              # ---- LIVE TELEMETRY: parse frame/fps/bitrate/speed/time ----
+              if $CONNECTED; then
+                local LINE FR FPS BR SPD TM TELE
+                LINE=$(tr '\r' '\n' < "$FFMPEG_LOG" | grep -E 'frame=' | tail -1)
+                if [ -n "$LINE" ]; then
+                  FR=$(echo "$LINE"  | grep -oE 'frame=[[:space:]]*[0-9]+'        | grep -oE '[0-9]+' | tail -1)
+                  FPS=$(echo "$LINE" | grep -oE 'fps=[[:space:]]*[0-9.]+'         | grep -oE '[0-9.]+' | tail -1)
+                  BR=$(echo "$LINE"  | grep -oE 'bitrate=[[:space:]]*[0-9.]+kbits/s' | grep -oE '[0-9.]+kbits/s' | tail -1)
+                  SPD=$(echo "$LINE" | grep -oE 'speed=[[:space:]]*[0-9.]+x'      | grep -oE '[0-9.]+x' | tail -1)
+                  TM=$(echo "$LINE"  | grep -oE 'time=[0-9:.]+'                   | grep -oE '[0-9:.]+' | tail -1)
+                  TELE="[SA_TELEMETRY] frame=${FR:-0} fps=${FPS:-0} bitrate=${BR:-0kbits/s} speed=${SPD:-0x} time=${TM:-00:00:00}"
+                  if [ "$TELE" != "$LAST_TELEM" ]; then echo "$TELE"; LAST_TELEM="$TELE"; fi
                 fi
               fi
             done
           }
 
-          # ---- Launch supervisor: run mode, auto-restart on early drop ----
           deadline_killer & KILLER_PID=$!
           monitor_stream  & MONITOR_PID=$!
 
           ATTEMPT=0
           while :; do
-            NOW=$(date +%s)
-            REMAIN=$(( END_TARGET_EPOCH - NOW ))
-            if [ "$REMAIN" -le 3 ]; then
-              echo "[SA] Target duration reached (${TARGET_SECONDS}s)."
-              break
-            fi
-            if [ -f "$FAIL_FILE" ]; then
-              echo "[SA] Setup/connection failure detected - will not restart."
-              FFMPEG_EXIT=1
-              break
-            fi
-            STREAM_CUT="$REMAIN"
-            ATTEMPT=$(( ATTEMPT + 1 ))
+            NOW=$(date +%s); REMAIN=$(( END_TARGET_EPOCH - NOW ))
+            [ "$REMAIN" -le 3 ] && { echo "[SA] Target duration reached (${TARGET_SECONDS}s)."; break; }
+            [ -f "$FAIL_FILE" ] && { echo "[SA] Setup/connection failure — no restart."; FFMPEG_EXIT=1; break; }
+            STREAM_CUT="$REMAIN"; ATTEMPT=$(( ATTEMPT + 1 ))
             if [ "$ATTEMPT" -eq 1 ]; then
               echo "[SA] Launch attempt #${ATTEMPT} (mode=${ASSET_MODE}, cut=${STREAM_CUT}s)."
-              case "$ASSET_MODE" in
-                photo_video) run_photo_video_mode ;;
-                photo_only)  run_photo_only_mode  ;;
-                video_only)  run_video_only_mode  ;;
-                *)
-                  echo "[SA_STATUS:FAILED:Unknown asset_mode: ${ASSET_MODE}]"
-                  touch "$FAIL_FILE"; FFMPEG_EXIT=1; break
-                  ;;
-              esac
-              FFMPEG_EXIT=$?
+              run_ffmpeg "false"; FFMPEG_EXIT=$?
             else
-              echo "[SA] FFmpeg dropped early - watchdog auto-restart #${ATTEMPT} (fill, remaining=${STREAM_CUT}s)."
+              echo "[SA] FFmpeg dropped early — watchdog auto-restart #${ATTEMPT} (fill, remaining=${STREAM_CUT}s)."
               echo "[SA_STATUS:RECONNECTING]"
-              run_fill_mode
-              FFMPEG_EXIT=$?
+              run_ffmpeg "true"; FFMPEG_EXIT=$?
             fi
-            NOW=$(date +%s)
-            if [ "$NOW" -ge $(( END_TARGET_EPOCH - 3 )) ]; then
-              break
-            fi
-            if [ "$FFMPEG_EXIT" -eq 0 ]; then
-              break
-            fi
-            echo "[SA] FFmpeg exit=${FFMPEG_EXIT} before target. Restarting in 2s..."
-            sleep 2
+            NOW=$(date +%s); [ "$NOW" -ge $(( END_TARGET_EPOCH - 3 )) ] && break
+            [ "$FFMPEG_EXIT" -eq 0 ] && break
+            echo "[SA] FFmpeg exit=${FFMPEG_EXIT} before target. Restarting in 2s..."; sleep 2
           done
 
           touch "$DONE_FILE"
@@ -1105,25 +823,21 @@ jobs:
 
           echo ""
           if [ -f "$FAIL_FILE" ]; then
-            echo "[SA] Session ended due to a setup/connection failure (see log below)."
+            echo "[SA] Session ended due to a setup/connection failure."
           else
             echo "[SA] Streaming session completed for the full requested duration."
             echo "[SA_STATUS:COMPLETE]"
           fi
-
           echo "ffmpeg_exit_code=${FFMPEG_EXIT}" >> "$GITHUB_OUTPUT"
 
-          echo ""
-          echo "--- FFmpeg stderr tail ---"
-          tail -25 "$FFMPEG_LOG" 2>/dev/null || true
-          echo "--- end stderr ---"
-          echo ""
+          echo ""; echo "--- FFmpeg stderr tail ---"; tail -25 "$FFMPEG_LOG" 2>/dev/null || true; echo "--- end ---"
           exit 0
 
 
-      # STEP 8 — Send RTMP end-of-stream signal (clean teardown)
       # ============================================================
-      - name: "[8/8] Send RTMP end-of-stream signal (clean teardown)"
+      # STEP 8 — Clean RTMP teardown (force platform offline)
+      # ============================================================
+      - name: "[8/8] Send RTMP end-of-stream signal"
         if: always()
         shell: bash
         run: |
@@ -1131,46 +845,29 @@ jobs:
           RTMP_BASE="${{ steps.params.outputs.rtmp_base }}"
           WIDTH="${{ steps.params.outputs.width }}"
           HEIGHT="${{ steps.params.outputs.height }}"
-
-          echo ""
-          echo "📡 [SA] ══════════════════════════════════════════════"
-          echo "📡 [SA]  SENDING RTMP END-OF-STREAM SIGNAL"
-          echo "📡 [SA] ══════════════════════════════════════════════"
-          echo "📡 [SA]  Pushing 3-second pure-black clip."
-          echo "📡 [SA]  This triggers RTMP deleteStream/FCUnpublish,"
-          echo "📡 [SA]  forcing YouTube Studio offline IMMEDIATELY."
-          echo "📡 [SA]  Target: ${RTMP_BASE}****"
-          echo ""
-
+          echo "[SA] Sending RTMP end-of-stream signal (3s black) to ${RTMP_BASE}****"
           timeout --kill-after=15s 20s \
-            ffmpeg \
-              -hide_banner -y \
+            ffmpeg -hide_banner -y \
               -f lavfi -i "color=c=black:s=${WIDTH}x${HEIGHT}:r=30:d=3" \
               -f lavfi -i "anoisesrc=r=44100:amplitude=0.001:color=white" \
-              -t 3 \
-              -map 0:v -map 1:a \
-              -c:v libx264 -preset ultrafast -tune zerolatency \
-              -profile:v baseline -level:v 3.1 \
+              -t 3 -map 0:v -map 1:a \
+              -c:v libx264 -preset ultrafast -tune zerolatency -profile:v baseline -level:v 3.1 \
               -b:v 100k -pix_fmt yuv420p -r 30 -g 30 -keyint_min 30 -sc_threshold 0 \
               -c:a aac -b:a 128k -ar 44100 -ac 2 \
               -f flv -flvflags no_duration_filesize \
               -reconnect 1 -reconnect_at_eof 1 -reconnect_streamed 1 -reconnect_delay_max 5 \
               "${RTMP_URL}" \
-            && echo "✅ [SA] End-of-stream signal delivered. YouTube Studio going offline." \
-            || echo "⚠  [SA] End signal timed out (YouTube will self-timeout in ~30s)."
-
+            && echo "[SA] End-of-stream signal delivered." \
+            || echo "WARN [SA] End signal timed out (platform self-timeout ~30s)."
           echo ""
-          echo "╔═══════════════════════════════════════════════════╗"
-          echo "║       StreamAdda v9 — SESSION COMPLETE            ║"
-          echo "╚═══════════════════════════════════════════════════╝"
+          echo "=================================================="
+          echo "   StreamAdda Ultimate Edition — SESSION COMPLETE"
+          echo "=================================================="
           printf "  Stream Name  : %s\n" "${{ steps.params.outputs.stream_name }}"
           printf "  Platform     : %s\n" "${{ steps.params.outputs.platform_label }}"
           printf "  Asset Mode   : %s\n" "${{ steps.params.outputs.asset_mode }}"
           printf "  Ratio        : %s\n" "${{ steps.params.outputs.ratio }}"
           printf "  Duration     : %s min\n" "${{ steps.params.outputs.total_minutes }}"
-          printf "  Drive Mode   : %s\n" "${{ steps.params.outputs.drive_mode }}"
-          printf "  Ambient Audio: %s\n" "${{ steps.params.outputs.ambient_audio }}"
+          printf "  ASMR Ambient : %s\n" "${{ steps.params.outputs.ambient_audio }}"
           printf "  FFmpeg Exit  : %s\n" "${{ steps.ffmpeg_stream.outputs.ffmpeg_exit_code }}"
-          echo ""
-          echo "  ✅ Stream session complete. Check YouTube Studio."
           echo ""
