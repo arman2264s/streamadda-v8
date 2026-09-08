@@ -9,7 +9,7 @@
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
 <style>
 /* ============================================================
-   StreamAdda Ultimate Edition — Clean Light Control System
+   StreamAdda Ultimate Edition v9.1 — Engineering Patch
    All chrome is SVG (lucide). Zero text emoji. CSS-variable driven.
    ============================================================ */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -59,6 +59,8 @@ label{font-size:12px;color:var(--muted);font-weight:600;display:block;margin-bot
 .btn-danger:hover:not(:disabled){background:var(--danger-dim)}
 .btn-sky{background:var(--sky-bg);color:var(--sky);border-color:var(--sky-bd)}
 .btn-sky:hover:not(:disabled){background:#e0f2fe}
+.btn-ok{background:var(--ok-bg);color:var(--ok-text);border-color:var(--ok-bd)}
+.btn-ok:hover:not(:disabled){background:#d1fae5}
 .btn-sm{padding:.38rem .7rem;font-size:12px}
 .btn-xs{padding:.25rem .5rem;font-size:11px}
 .btn-icon{padding:.5rem;width:38px;height:38px;justify-content:center}
@@ -81,13 +83,14 @@ main{max-width:1180px;margin:0 auto;padding:1.5rem 1.25rem 4rem}
 .spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 
 /* ---- Grid + cards ---- */
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:1.1rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:1.1rem}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm);overflow:hidden;transition:box-shadow var(--tr),border-color var(--tr)}
 .card:hover{box-shadow:var(--shadow-md)}
 .card.is-live{border-color:var(--danger-bd)}
 .card.is-connecting{border-color:var(--warn-bd)}
 .card.is-failed{border-color:var(--danger-bd)}
 .card.is-finished{border-color:var(--ok-bd)}
+.card.is-stopping{border-color:var(--warn-bd)}
 .card-body{padding:1.1rem}
 .card-top{display:flex;align-items:flex-start;gap:.75rem;margin-bottom:.9rem}
 .card-title{font-size:15px;font-weight:700;color:var(--text);letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -111,17 +114,20 @@ main{max-width:1180px;margin:0 auto;padding:1.5rem 1.25rem 4rem}
 .b-offline{background:var(--surface3);color:var(--muted)}
 .b-finished{background:var(--ok-bg);color:var(--ok-text)}
 .b-failed{background:var(--danger-bg);color:var(--danger-text)}
+.b-stopping{background:var(--warn-bg);color:var(--warn-text)}
 
 /* ---- Phase progress ---- */
 .phase{margin-bottom:.9rem}
 .phase-row{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--muted);margin-bottom:.35rem}
 .phase-lbl{display:inline-flex;align-items:center;gap:.3rem;font-weight:600}
 .phase-lbl svg{width:12px;height:12px}
+.phase-eta{font-size:11px;font-weight:700;color:var(--text-sec)}
 .track{height:7px;background:var(--surface3);border-radius:999px;overflow:hidden}
 .fill{height:100%;border-radius:999px;transition:width .6s var(--e-out)}
 .fill.photo{background:linear-gradient(90deg,var(--sky),#38bdf8)}
 .fill.video{background:linear-gradient(90deg,var(--violet),#a78bfa)}
 .fill.connecting{background:linear-gradient(90deg,var(--warn),#fbbf24);animation:shimmer 1.4s infinite}
+.fill.stopping{background:linear-gradient(90deg,var(--danger),#f87171);animation:shimmer 1.4s infinite}
 @keyframes shimmer{0%,100%{opacity:.6}50%{opacity:1}}
 
 /* ---- Telemetry metric grid ---- */
@@ -139,18 +145,37 @@ main{max-width:1180px;margin:0 auto;padding:1.5rem 1.25rem 4rem}
 .divider{border:none;border-top:1px solid var(--border);margin:.75rem 0}
 .actions{display:flex;flex-wrap:wrap;gap:.45rem;align-items:center}
 
-/* ---- Log window ---- */
+/* ---- Stop-pending dismiss panel ---- */
+.stop-panel{display:flex;flex-wrap:wrap;align-items:center;gap:.6rem;padding:.6rem .8rem;
+  background:var(--warn-bg);border:1px solid var(--warn-bd);border-radius:var(--radius-sm);width:100%;margin-top:.1rem}
+.stop-panel .sp-text{display:flex;align-items:center;gap:.4rem;font-size:12px;font-weight:600;color:var(--warn-text);flex:1}
+.stop-panel .sp-text svg{width:14px;height:14px}
+.stop-panel .sp-cnt{font-size:18px;font-weight:800;color:var(--warn-text);min-width:28px;text-align:center;font-family:'JetBrains Mono',monospace}
+
+/* ---- Engine log window (light) ---- */
 .logwrap{margin-top:.85rem;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;background:var(--surface2)}
 .logwrap-head{display:flex;align-items:center;justify-content:space-between;padding:.4rem .6rem;background:var(--surface3);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--text-sec)}
 .logwrap-head .lh{display:inline-flex;align-items:center;gap:.35rem}
 .logwrap-head .lh svg{width:12px;height:12px}
-.log{font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.5;color:var(--text-sec);padding:.6rem;max-height:190px;overflow-y:auto;white-space:pre-wrap;word-break:break-word}
+.log{font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.5;color:var(--text-sec);padding:.6rem;max-height:160px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
 .log span{display:block}
 .log .log-ok{color:var(--ok)}
 .log .log-err{color:var(--danger)}
 .log .log-warn{color:var(--warn)}
 .log .log-info{color:var(--primary)}
 .log .log-telem{color:var(--violet)}
+
+/* ---- FFMPEG OUTPUT terminal (dark/black) ---- */
+.logwrap.ffterm{background:#0b0f1a;border-color:#1a2238}
+.ffterm .logwrap-head{background:#111827;border-bottom-color:#1a2238;color:#94a3b8}
+.ffterm .logwrap-head .lh{color:#67e8f9}
+.ffterm .ffraw{background:#0b0f1a;color:#94a3b8;max-height:220px;font-size:11.5px;line-height:1.6;padding:.7rem .8rem}
+.ffterm .ffraw .fr-telem{color:#22d3ee;font-weight:600}
+.ffterm .ffraw .fr-meta{color:#6ee7b7}
+.ffterm .ffraw .fr-err{color:#f87171}
+.ffterm .ffraw .fr-warn{color:#fbbf24}
+.ffterm .ffraw .fr-enc{color:#a78bfa}
+.ffterm .ffraw .fr-mux{color:#fb923c}
 
 /* ---- Empty state ---- */
 .empty{text-align:center;padding:4rem 1rem;color:var(--muted)}
@@ -365,7 +390,7 @@ dialog::backdrop{background:rgba(15,23,42,.45);backdrop-filter:blur(3px)}
         <button class="seg-btn" id="mode-video" type="button" onclick="setMode('video_only')"><i data-lucide="film"></i>Video</button>
         <button class="seg-btn on" id="mode-both" type="button" onclick="setMode('photo_video')"><i data-lucide="layers"></i>Photo+Video</button>
       </div>
-      <div class="hint" id="mode-tip" style="margin-top:.55rem">Photo slideshow loops first, video plays once at the end. Photo time = total − video length.</div>
+      <div class="hint" id="mode-tip" style="margin-top:.55rem">Photo slideshow loops first, video plays once at the end. Photo time = total − video length (auto-calculated via ffprobe).</div>
     </div>
 
     <!-- Source -->
@@ -394,7 +419,7 @@ dialog::backdrop{background:rgba(15,23,42,.45);backdrop-filter:blur(3px)}
         <div><div class="tt">Natural road / street ASMR</div><div class="td" id="ambient-desc">Off — inaudible white-noise floor (platform-safe)</div></div>
         <div class="switch" id="ambient-switch"></div>
       </div>
-      <div class="hint" style="margin-top:.5rem">ASMR mixes a continuous low-pass engine rumble with street air and gated distant horns, generated natively in FFmpeg.</div>
+      <div class="hint" style="margin-top:.5rem">ASMR mixes a continuous low-pass engine rumble (anoisesrc brown) with street air (anoisesrc pink) and gated distant horns (aevalsrc LFO), generated natively in FFmpeg via amix filtergraph.</div>
     </div>
 
     <!-- Format + timing -->
@@ -419,15 +444,15 @@ dialog::backdrop{background:rgba(15,23,42,.45);backdrop-filter:blur(3px)}
       <div class="ctrl-head"><span class="ci"><i data-lucide="calendar-clock"></i></span><span class="ct">Scheduling</span></div>
       <label class="toggle-row" style="cursor:pointer">
         <span class="ti"><i data-lucide="clock"></i></span>
-        <div><div class="tt">Schedule start</div><div class="td">Zero-drift ISO-8601 trigger</div></div>
+        <div><div class="tt">Schedule start</div><div class="td">Zero-drift UTC ISO-8601 trigger</div></div>
         <input type="checkbox" id="f-sched" onchange="toggleSched()" style="margin-left:auto" />
       </label>
       <div id="sched-panel" style="display:none;margin-top:.75rem">
         <div class="row2">
-          <div class="field"><label>Start at</label><input type="datetime-local" id="f-start" /></div>
+          <div class="field"><label>Start at (local time)</label><input type="datetime-local" id="f-start" /></div>
           <div class="field"><label>Hard stop (optional)</label><input type="datetime-local" id="f-stop" /></div>
         </div>
-        <div class="hint">Times are converted to UTC ISO-8601 before dispatch.</div>
+        <div class="hint">Local times are converted to UTC ISO-8601 before dispatch for zero time-drift synchronisation.</div>
       </div>
     </div>
 
@@ -491,11 +516,14 @@ dialog::backdrop{background:rgba(15,23,42,.45);backdrop-filter:blur(3px)}
 
 <script>
 /* ============================================================
-   StreamAdda Ultimate Edition — Control Panel logic
+   StreamAdda Ultimate Edition v9.1 — Engineering Patch
    - localStorage config + stream state
    - GitHub Contents API multi-file upload (200MB cap)
    - repository_dispatch single payload_config bundle
    - Run finder + smart poller with [SA_STATUS] + [SA_TELEMETRY] parsing
+   - [SA_FFMPEG_RAW] raw FFmpeg stderr terminal rendering
+   - Fixed Stop: cancelRun (SIGINT via GH cancel) + 10s dismiss countdown
+   - Updated ETA: "Xm Ys left" with H:MM:SS remaining
    ============================================================ */
 const LS_CFG='sa_cfg_ultimate';
 const LS_STREAMS='sa_streams_ultimate';
@@ -523,6 +551,8 @@ window.addEventListener('DOMContentLoaded',()=>{
       if(s.runId) startPoll(id); else if(s.dispatchedAt) startFindRun(id,s.dispatchedAt);
       if(s.status==='online') startTimer(id);
     }
+    // Resume stop countdown if refreshed mid-dismiss
+    if(s.stopPending && !['offline','failed','finished'].includes(s.status)) resumeStopCountdown(id);
   });
   icons();
 });
@@ -679,7 +709,6 @@ async function commitUploads(){
     try{
       const b64=await fileToBase64(u.file);
       const path=encodeURIComponent(u.file.name);
-      // check for existing sha (update vs create)
       let sha=null;
       const head=await ghFetch(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path}`);
       if(head.ok){ const j=await head.json(); sha=j.sha; }
@@ -707,7 +736,11 @@ function setMode(mode){
   S.assetMode=mode;
   ['mode-photo','mode-video','mode-both'].forEach(id=>document.getElementById(id).classList.remove('on'));
   document.getElementById(mode==='photo_only'?'mode-photo':mode==='video_only'?'mode-video':'mode-both').classList.add('on');
-  const tips={photo_only:'Photo slideshow loops for the full duration.',video_only:'Video loops seamlessly for the full duration.',photo_video:'Photo slideshow loops first, video plays once at the end. Photo time = total − video length.'};
+  const tips={
+    photo_only:'Photo slideshow loops for the full duration.',
+    video_only:'Video loops seamlessly for the full duration.',
+    photo_video:'Photo slideshow loops first, video plays once at the end. Photo time = total − video length (auto-calculated via ffprobe).'
+  };
   document.getElementById('mode-tip').textContent=tips[mode];
   const st=document.getElementById('mode-status');
   st.innerHTML='<span class="dot"></span> '+(mode==='photo_only'?'Photo loop':mode==='video_only'?'Video loop':'Sequential');
@@ -840,8 +873,9 @@ async function submitStream(event){
     const failId=genId();
     S.streams[failId]={id:failId,name,platform:S.platform,ratio:S.ratio,assetMode:S.assetMode,driveMode:S.driveMode,
       ambientAudio:S.ambientAudio,durationMin:dur,startAt,stopAt,ytVideoId,dispatchedAt,startedAt:null,runId:null,runUrl:null,jobId:null,
-      status:'failed',phase:'failed',frameCount:0,telemetry:null,failReason:err.message,
-      logLines:[`[${ts()}] Dispatch to GitHub Actions FAILED`,`[${ts()}] Reason: ${err.message}`],lastPollAt:null,pollFailCount:0};
+      status:'failed',phase:'failed',frameCount:0,telemetry:null,failReason:err.message,rawFfmpegLines:[],
+      logLines:[`[${ts()}] Dispatch to GitHub Actions FAILED`,`[${ts()}] Reason: ${err.message}`],lastPollAt:null,pollFailCount:0,
+      stopPending:false,stopCountdown:0};
     persistStreams(); renderAll(); toast(`Dispatch failed: ${err.message}`,'err');
     btn.disabled=false; lbl.textContent='Start stream'; return false;
   }
@@ -849,7 +883,8 @@ async function submitStream(event){
   S.streams[id]={id,name,platform:S.platform,ratio:S.ratio,assetMode:S.assetMode,driveMode:S.driveMode,ambientAudio:S.ambientAudio,
     streamKey:key,backupRtmp:backup,photoFilename,videoFilename,photoDriveUrl,videoDriveUrl,durationMin:dur,startAt,stopAt,ytVideoId,
     dispatchedAt,startedAt:null,runId:null,runUrl:null,jobId:null,status:startAt?'scheduled':'starting',phase:'connecting',
-    frameCount:0,telemetry:null,logLines:[`[${ts()}] Stream dispatched to GitHub Actions`],lastPollAt:null,pollFailCount:0};
+    frameCount:0,telemetry:null,rawFfmpegLines:[],logLines:[`[${ts()}] Stream dispatched to GitHub Actions`],
+    lastPollAt:null,pollFailCount:0,stopPending:false,stopCountdown:0};
   persistStreams();
   document.getElementById('dlg').close();
   btn.disabled=false; lbl.textContent='Start stream';
@@ -937,6 +972,7 @@ async function pollStep(id){
   if(!logText) return;
   parseStatusMarkers(id,logText);
   parseTelemetry(id,logText);
+  parseFfmpegRawLines(id,logText);
   const lines=logText.split('\n').map(l=>l.replace(/\r/g,''));
   const recent=lines.filter(l=>l.includes('[SA]')||l.includes('[SA_STATUS')||l.includes('[SA_TELEMETRY]')).slice(-10);
   if(recent.length){
@@ -944,6 +980,32 @@ async function pollStep(id){
   }
 }
 function cleanLogLine(l){ return l.replace(/^[0-9T:.\-]+Z?\s+/,'').trim(); }
+
+/* ============================================================
+   parseFfmpegRawLines — extract [SA_FFMPEG_RAW] lines from job log
+   These are the raw, unfiltered FFmpeg stderr lines emitted by the
+   workflow's named-pipe reader with a [SA_FFMPEG_RAW] prefix.
+   They include: encoder metadata, stream info, muxer lines,
+   and live telemetry: frame= fps= q= size= time= bitrate= speed=
+   ============================================================ */
+function parseFfmpegRawLines(id, logText){
+  const s=S.streams[id]; if(!s) return;
+  // Extract all [SA_FFMPEG_RAW] lines, strip GH Actions timestamp prefix and the tag itself
+  const rawLines=logText.split('\n')
+    .filter(l=>l.includes('[SA_FFMPEG_RAW]'))
+    .map(l=>{
+      // Remove GH Actions log timestamp: "2026-01-01T00:00:00.000Z " prefix
+      let stripped=l.replace(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s+/,'').trim();
+      // Remove the [SA_FFMPEG_RAW] tag itself
+      stripped=stripped.replace('[SA_FFMPEG_RAW] ','').replace('[SA_FFMPEG_RAW]','').trim();
+      return stripped;
+    })
+    .filter(Boolean);
+  if(rawLines.length){
+    // Keep last 200 raw lines (enough to capture encoder init + live telemetry)
+    s.rawFfmpegLines=rawLines.slice(-200);
+  }
+}
 
 function parseStatusMarkers(id,logText){
   const s=S.streams[id];
@@ -976,14 +1038,81 @@ function parseTelemetry(id,logText){
 function startTimer(id){ if(S.timers[id]) return; S.timers[id]=setInterval(()=>renderCard(id),1000); }
 function stopTimer(id){ if(S.timers[id]){ clearInterval(S.timers[id]); S.timers[id]=null; } }
 
-/* ---------------- stop / delete ---------------- */
-function stopStream(id){
+/* ============================================================
+   stopStream — BUG-FIX: now properly cancels the GitHub Actions run
+   which sends SIGTERM to the runner shell, which triggers the
+   _sa_graceful_stop trap in the workflow: kill -2 (SIGINT) -> kill -15
+   (SIGTERM) -> kill -9, giving FFmpeg a clean GOP boundary stop.
+
+   After cancelling:
+   1. Sets s.stopPending = true, s.stopCountdown = 10
+   2. Counts down 10 seconds (YouTube registration window)
+   3. Shows a Dismiss button so the user can close the session
+   ============================================================ */
+async function stopStream(id){
   const s=S.streams[id]; if(!s) return;
-  if(!confirm(`Stop "${s.name}"?\n\nThis ends the display record. To cancel the GitHub run, open:\n${s.runUrl||'the Actions tab'}`)) return;
-  s.status='offline'; s.phase='done'; stopTimer(id); stopPoll(id);
+  if(s.stopPending){ toast('Already stopping — click Dismiss when ready','warn'); return; }
+  if(!confirm(`Stop "${s.name}"?\n\nThis will cancel the GitHub Actions run and send SIGINT\u2192SIGTERM to FFmpeg for a clean stream end.`)) return;
+
+  s.stopPending=true; s.stopCountdown=10;
+  addLog(id,'Stop requested — sending cancel signal to GitHub Actions…');
+  renderCard(id);
+
+  // Cancel the GH Actions run — this sends SIGTERM to the runner which
+  // triggers _sa_graceful_stop trap: kill -2 FFmpeg -> kill -15 -> kill -9
+  if(s.runId){
+    try{
+      const ok=await cancelRun(s.runId);
+      addLog(id,ok?'Run cancel accepted ✓ (SIGINT dispatched to FFmpeg via trap)':'Cancel skipped (run may already be finishing).');
+    }catch(err){
+      addLog(id,`Cancel request error: ${err.message}`);
+    }
+  } else {
+    addLog(id,'No run ID — marking offline directly.');
+  }
+
+  // Stop UI polling & timer (stream is being shut down)
+  stopPoll(id);
+  stopTimer(id);
   if(S.findJobs[id]){ clearInterval(S.findJobs[id]); S.findJobs[id]=null; }
-  addLog(id,'Manually marked offline'); persistStreams(); renderAll();
+
+  persistStreams();
+  renderCard(id);
+  toast('Stop signal sent — YouTube processing window: 10s','warn');
+
+  // 10-second countdown then auto-complete
+  resumeStopCountdown(id);
 }
+
+function resumeStopCountdown(id){
+  const s=S.streams[id]; if(!s||!s.stopPending) return;
+  let remaining=s.stopCountdown||10;
+  const countdown=setInterval(()=>{
+    const cur=S.streams[id]; if(!cur){ clearInterval(countdown); return; }
+    remaining=Math.max(0,remaining-1);
+    cur.stopCountdown=remaining;
+    renderCard(id);
+    if(remaining<=0){ clearInterval(countdown); }
+  },1000);
+}
+
+function dismissStream(id){
+  const s=S.streams[id]; if(!s) return;
+  s.status='offline'; s.phase='done'; s.stopPending=false; s.stopCountdown=0;
+  stopTimer(id); stopPoll(id);
+  if(S.findJobs[id]){ clearInterval(S.findJobs[id]); delete S.findJobs[id]; }
+  addLog(id,'Session dismissed — broadcast ended');
+  persistStreams(); renderAll();
+  toast(`${s.name} — session closed`,'ok');
+}
+
+async function cancelRun(runId){
+  if(!runId) return false;
+  const {owner,repo}=S.cfg;
+  try{ const r=await ghFetch(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/cancel`,{method:'POST'}); return r.status===202||r.status===409; }
+  catch(_){ return false; }
+}
+
 function deleteStream(id){
   if(!confirm('Remove this stream card?')) return;
   stopTimer(id); stopPoll(id);
@@ -1031,19 +1160,14 @@ async function confirmRestart(event){
   if(event) event.preventDefault();
   const id=S.restartId; const s=S.streams[id]; if(!s){ document.getElementById('dlg-restart').close(); return; }
   let mins=Math.max(2,Math.min(MAX_DURATION_MIN,parseInt(document.getElementById('r-min').value,10)||60));
-  s.durationMin=mins; s.startAt=''; // restart runs immediately
+  s.durationMin=mins; s.startAt='';
+  s.stopPending=false; s.stopCountdown=0; s.rawFfmpegLines=[];
   persistStreams(); document.getElementById('dlg-restart').close();
   toast(`Restarting ${s.name} for ${mins} min…`,'inf');
   try{ await dispatchForExistingStream(id); }
   catch(err){ addLog(id,`Restart failed: ${err.message}`); toast(`Restart failed: ${err.message}`,'err'); s.status='failed'; s.phase='failed'; persistStreams(); renderCard(id); }
 }
 
-async function cancelRun(runId){
-  if(!runId) return false;
-  const {owner,repo}=S.cfg;
-  try{ const r=await ghFetch(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}/cancel`,{method:'POST'}); return r.status===202||r.status===409; }
-  catch(_){ return false; }
-}
 async function dispatchForExistingStream(id){
   const s=S.streams[id]; if(!s) return;
   if(!s.streamKey) throw new Error('Stream key not stored on this card — recreate it once.');
@@ -1051,7 +1175,7 @@ async function dispatchForExistingStream(id){
   stopPoll(id); if(S.findJobs[id]){ clearInterval(S.findJobs[id]); S.findJobs[id]=null; } stopTimer(id);
   const dispatchedAt=new Date().toISOString();
   Object.assign(s,{runId:null,runUrl:null,jobId:null,startedAt:null,frameCount:0,telemetry:null,pollFailCount:0,dispatchedAt,
-    status:s.startAt?'scheduled':'starting',phase:'connecting'});
+    status:s.startAt?'scheduled':'starting',phase:'connecting',rawFfmpegLines:[],stopPending:false,stopCountdown:0});
   addLog(id,`Re-dispatching (${s.durationMin} min)…`); persistStreams(); renderCard(id);
   await dispatchWorkflow(buildConfigBundle(s));
   addLog(id,'Re-dispatched — locating new run…');
@@ -1079,28 +1203,79 @@ function renderCard(id){
   document.getElementById('livecount').textContent=live;
   document.getElementById('livepill').style.display=live>0?'flex':'none';
 }
+
+/* ============================================================
+   buildCard — constructs the full stream card including:
+   1. Progress bar with H:MM:SS + "Xm Ys left" countdown
+   2. Telemetry metric grid
+   3. Stop-pending dismiss panel (10s countdown + Dismiss button)
+   4. Engine log (light, [SA] + [SA_TELEMETRY] lines)
+   5. FFMPEG OUTPUT terminal (dark, raw [SA_FFMPEG_RAW] lines)
+   ============================================================ */
 function buildCard(id){
   const s=S.streams[id];
-  const el=document.createElement('div'); el.className=`card ${statusCardClass(s.status)}`; el.id=`card-${id}`;
-  const uptime=s.startedAt?fmtDuration(Date.now()-new Date(s.startedAt).getTime()):'--:--:--';
+  const el=document.createElement('div');
+  const isStopPending=!!s.stopPending;
+  const cardClass=isStopPending?'is-stopping':statusCardClass(s.status);
+  el.className=`card ${cardClass}`; el.id=`card-${id}`;
+
   const elapsed=s.startedAt?Math.floor((Date.now()-new Date(s.startedAt).getTime())/1000):0;
   const totalSec=(s.durationMin||60)*60;
   const pct=Math.min(100,Math.round(elapsed/totalSec*100));
   const etaMs=s.startedAt?Math.max(0,new Date(s.startedAt).getTime()+totalSec*1000-Date.now()):null;
-  const eta=etaMs!=null?fmtDuration(etaMs):'--:--:--';
-  const modeChips={photo_only:'<span class="chip chip-photo"><i data-lucide="image"></i>Photo</span>',
+  const uptime=s.startedAt?fmtDuration(Date.now()-new Date(s.startedAt).getTime()):'--:--:--';
+
+  // Updated ETA format: "Xm Ys left" with H:MM:SS for display
+  const etaHms=etaMs!=null?fmtDuration(etaMs):'--:--:--';
+  const etaLabel=etaMs!=null?fmtEtaLabel(etaMs):'--:--:--';
+
+  const modeChips={
+    photo_only:'<span class="chip chip-photo"><i data-lucide="image"></i>Photo</span>',
     video_only:'<span class="chip chip-video"><i data-lucide="film"></i>Video</span>',
-    photo_video:'<span class="chip chip-both"><i data-lucide="layers"></i>Seq.</span>'};
+    photo_video:'<span class="chip chip-both"><i data-lucide="layers"></i>Seq.</span>'
+  };
   const driveChip=s.driveMode?'<span class="chip chip-drive"><i data-lucide="cloud"></i>Drive</span>':'';
   const ambChip=s.ambientAudio?'<span class="chip chip-ambient"><i data-lucide="waves"></i>ASMR</span>':'';
-  const fillClass=s.phase==='video'?'video':(s.status==='starting'||s.status==='scheduled'?'connecting':'photo');
+
+  const fillClass=isStopPending?'stopping':s.phase==='video'?'video':(s.status==='starting'||s.status==='scheduled'?'connecting':'photo');
   const t=s.telemetry||{};
+  const isLive=s.status==='online';
+
+  // Engine log (light background, [SA] tagged lines)
   const logHtml=(s.logLines||[]).slice(-12).map(l=>{
     const cls=/FAILED|error|Failed/i.test(l)?'log-err':/LIVE|handshake|completed|success/i.test(l)?'log-ok':/\[SA_TELEMETRY\]/.test(l)?'log-telem':/^WARN|backing off|retry/i.test(l)?'log-warn':/\[SA_STATUS/.test(l)?'log-info':'';
     return `<span class="${cls}">${esc(l)}</span>`;
   }).join('');
+
+  // Raw FFmpeg terminal (dark, [SA_FFMPEG_RAW] lines — completely unfiltered)
+  const rawLines=(s.rawFfmpegLines||[]).slice(-40);
+  const rawHtml=rawLines.map(l=>{
+    // Classify line type for syntax colouring:
+    // telemetry line: frame= fps= q= size= time= bitrate= speed=
+    if(/frame=\s*\d/.test(l)) return `<span class="fr-telem">${esc(l)}</span>`;
+    // Encoder/codec metadata (libx264, aac, stream mapping lines)
+    if(/libx264|libfdk|aac|encoder|Encoder|SEI|NAL|profile|level|aspect|SAR|DAR/.test(l)) return `<span class="fr-enc">${esc(l)}</span>`;
+    // Stream / input / output headers
+    if(/Input #|Output #|Stream #|Duration:|Metadata:|from '|  Duration/.test(l)) return `<span class="fr-meta">${esc(l)}</span>`;
+    // Muxer / RTMP / flv output lines
+    if(/flv|rtmp|RTMP|mux|Mux|FLV|Opening|Press/.test(l)) return `<span class="fr-mux">${esc(l)}</span>`;
+    // Error lines
+    if(/error|Error|failed|Failed|refused|timed out/i.test(l)) return `<span class="fr-err">${esc(l)}</span>`;
+    // Warning lines
+    if(/warning|Warning|warn|WARN|deprecated/i.test(l)) return `<span class="fr-warn">${esc(l)}</span>`;
+    // Default
+    return `<span>${esc(l)}</span>`;
+  }).join('');
+
   const runLink=s.runUrl?`<a href="${esc(s.runUrl)}" target="_blank" rel="noopener" style="font-size:11px">View run</a>`:'';
-  const isLive=s.status==='online';
+
+  // Stop-pending panel: 10s countdown + Dismiss button
+  const stopPanelHtml=isStopPending?`
+  <div class="stop-panel">
+    <span class="sp-text"><i data-lucide="timer"></i>YouTube processing window — waiting for broadcast to register as Ended</span>
+    <span class="sp-cnt">${s.stopCountdown||0}s</span>
+    <button class="btn btn-ok btn-sm" onclick="dismissStream('${id}')"><i data-lucide="check-circle"></i> Dismiss</button>
+  </div>`:'';
 
   el.innerHTML=`
   <div class="card-body">
@@ -1113,21 +1288,25 @@ function buildCard(id){
           <span><i data-lucide="ratio"></i>${esc(s.ratio)}</span>
         </div>
       </div>
-      <div>${badgeHtml(s)}</div>
+      <div>${badgeHtml(s,isStopPending)}</div>
     </div>
 
     <div class="phase">
       <div class="phase-row">
-        <span class="phase-lbl"><i data-lucide="${s.phase==='video'?'film':'image'}"></i>
-          ${s.phase==='video'?'Video phase':s.phase==='done'?'Completed':s.phase==='failed'?'Failed':(s.status==='starting'?'Connecting…':s.status==='scheduled'?'Scheduled':'Photo phase')}</span>
-        <span>${pct}%</span>
+        <span class="phase-lbl"><i data-lucide="${s.phase==='video'?'film':isStopPending?'square-x':'image'}"></i>
+          ${isStopPending?'Stopping…':s.phase==='video'?'Video phase':s.phase==='done'?'Completed':s.phase==='failed'?'Failed':(s.status==='starting'?'Connecting…':s.status==='scheduled'?'Scheduled':'Photo phase')}</span>
+        <span style="display:flex;align-items:center;gap:.5rem">
+          ${isLive&&!isStopPending?`<span class="phase-eta">${etaLabel}</span>`:''}
+          <span>${pct}%</span>
+        </span>
       </div>
       <div class="track"><div class="fill ${fillClass}" style="width:${pct}%"></div></div>
+      ${isLive&&!isStopPending?`<div style="font-size:10px;color:var(--muted);margin-top:.25rem;text-align:right">${etaHms} remaining</div>`:''}
     </div>
 
     <div class="telemetry">
       <div class="metric ${isLive?'hot':''}"><div class="m-k"><i data-lucide="clock"></i>Uptime</div><div class="m-v mono">${uptime}</div></div>
-      <div class="metric"><div class="m-k"><i data-lucide="hourglass"></i>Remaining</div><div class="m-v mono">${isLive?eta:'--:--:--'}</div></div>
+      <div class="metric"><div class="m-k"><i data-lucide="hourglass"></i>Remaining</div><div class="m-v mono">${isLive?etaHms:'--:--:--'}</div></div>
       <div class="metric"><div class="m-k"><i data-lucide="activity"></i>Speed</div><div class="m-v mono">${esc(t.speed||'—')}</div></div>
       <div class="metric"><div class="m-k"><i data-lucide="gauge"></i>FPS</div><div class="m-v mono">${esc(t.fps||'—')}</div></div>
       <div class="metric"><div class="m-k"><i data-lucide="wifi"></i>Bitrate</div><div class="m-v mono">${esc(t.bitrate||'—')}</div></div>
@@ -1139,22 +1318,44 @@ function buildCard(id){
     <hr class="divider" />
 
     <div class="actions">
-      ${(s.status==='online'||s.status==='starting'||s.status==='scheduled')?`<button class="btn btn-danger btn-sm" onclick="stopStream('${id}')"><i data-lucide="square"></i> Stop</button>`:''}
-      ${['finished','offline','failed'].includes(s.status)?`<button class="btn btn-primary btn-sm" onclick="openRestart('${id}')"><i data-lucide="rotate-ccw"></i> Restart</button>`:''}
+      ${!isStopPending&&(s.status==='online'||s.status==='starting'||s.status==='scheduled')?`<button class="btn btn-danger btn-sm" onclick="stopStream('${id}')"><i data-lucide="square"></i> Stop</button>`:''}
+      ${isStopPending?`<button class="btn btn-ok btn-sm" onclick="dismissStream('${id}')"><i data-lucide="check-circle"></i> Dismiss</button>`:''}
+      ${!isStopPending&&['finished','offline','failed'].includes(s.status)?`<button class="btn btn-primary btn-sm" onclick="openRestart('${id}')"><i data-lucide="rotate-ccw"></i> Restart</button>`:''}
       <button class="btn btn-ghost btn-sm" onclick="openEdit('${id}')"><i data-lucide="sliders-horizontal"></i> Adjust</button>
       ${s.ytVideoId?`<a class="btn btn-sky btn-sm" href="https://studio.youtube.com/video/${esc(s.ytVideoId)}/livestreaming" target="_blank" rel="noopener"><i data-lucide="external-link"></i> Studio</a>`:''}
       <button class="btn btn-ghost btn-sm" style="margin-left:auto;color:var(--danger)" onclick="deleteStream('${id}')"><i data-lucide="trash-2"></i></button>
     </div>
 
-    <div class="logwrap">
-      <div class="logwrap-head"><span class="lh"><i data-lucide="terminal"></i> Engine log${t.time?` · t=${esc(t.time)}`:''}</span>
-        <button class="btn btn-ghost btn-xs" onclick="clearLog('${id}')"><i data-lucide="eraser"></i> Clear</button></div>
+    ${stopPanelHtml}
+
+    <!-- Engine log: light background, [SA] / [SA_STATUS] / [SA_TELEMETRY] tagged lines -->
+    <div class="logwrap" style="margin-top:.75rem">
+      <div class="logwrap-head">
+        <span class="lh"><i data-lucide="terminal"></i> Engine log${t.time?` · t=${esc(t.time)}`:''}</span>
+        <button class="btn btn-ghost btn-xs" onclick="clearLog('${id}')"><i data-lucide="eraser"></i> Clear</button>
+      </div>
       <div class="log" id="log-${id}">${logHtml}</div>
     </div>
+
+    <!-- FFMPEG OUTPUT: dark terminal, raw unfiltered FFmpeg stderr lines -->
+    <div class="logwrap ffterm" style="margin-top:.5rem">
+      <div class="logwrap-head">
+        <span class="lh"><i data-lucide="terminal-square"></i> FFMPEG OUTPUT
+          <span style="font-size:10px;font-weight:400;color:#4a5568;margin-left:.4rem">
+            ${rawLines.length?`(${rawLines.length} lines)`:'waiting for stream…'}
+          </span>
+        </span>
+        <button class="btn btn-ghost btn-xs" style="color:#94a3b8;border-color:#2d3748" onclick="clearRawLog('${id}')"><i data-lucide="eraser"></i> Clear</button>
+      </div>
+      <div class="log ffraw" id="rawlog-${id}">${rawHtml||'<span style="color:#4a5568">No FFmpeg output yet. Output appears once the stream starts encoding.</span>'}</div>
+    </div>
+
   </div>`;
   return el;
 }
-function badgeHtml(s){
+
+function badgeHtml(s, isStopPending){
+  if(isStopPending) return '<span class="badge b-stopping"><span class="d"></span>STOPPING</span>';
   if(s.status==='online'&&s.phase==='video') return '<span class="badge b-video"><span class="d"></span>LIVE · VIDEO</span>';
   if(s.status==='online') return '<span class="badge b-photo"><span class="d"></span>LIVE · PHOTO</span>';
   const map={starting:['b-starting',true,'CONNECTING'],scheduled:['b-scheduled',false,'SCHEDULED'],offline:['b-offline',false,'OFFLINE'],finished:['b-finished',false,'FINISHED'],failed:['b-failed',true,'FAILED']};
@@ -1163,7 +1364,7 @@ function badgeHtml(s){
 }
 function statusCardClass(st){ return st==='online'?'is-live':st==='starting'?'is-connecting':st==='failed'?'is-failed':st==='finished'?'is-finished':''; }
 
-/* ---------------- log + toast + utils ---------------- */
+/* ---------------- log + clear functions ---------------- */
 function addLog(id,msg){
   const s=S.streams[id]; if(!s) return;
   s.logLines=s.logLines||[]; s.logLines.push(`[${ts()}] ${msg}`);
@@ -1174,6 +1375,9 @@ function addLog(id,msg){
     logEl.appendChild(line); logEl.scrollTop=logEl.scrollHeight; }
 }
 function clearLog(id){ if(!S.streams[id])return; S.streams[id].logLines=[]; const l=document.getElementById(`log-${id}`); if(l)l.innerHTML=''; persistStreams(); }
+function clearRawLog(id){ if(!S.streams[id])return; S.streams[id].rawFfmpegLines=[]; const l=document.getElementById(`rawlog-${id}`); if(l)l.innerHTML='<span style="color:#4a5568">Cleared.</span>'; persistStreams(); }
+
+/* ---------------- toast + utils ---------------- */
 function toast(msg,type='inf'){
   const ic={ok:'check-circle',err:'x-circle',inf:'info',warn:'alert-triangle'};
   const c=document.getElementById('toasts'); const el=document.createElement('div'); el.className=`toast ${type}`;
@@ -1184,7 +1388,19 @@ function toast(msg,type='inf'){
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function ts(){ return new Date().toLocaleTimeString(); }
 function toLocalDateTime(iso){ if(!iso)return''; const d=new Date(iso); const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; }
-function fmtDuration(ms){ const t=Math.max(0,Math.floor(ms/1000)); const h=Math.floor(t/3600),m=Math.floor((t%3600)/60),s=t%60; const p=n=>String(n).padStart(2,'0'); return h>0?`${h}:${p(m)}:${p(s)}`:`${p(m)}:${p(s)}`; }
+function fmtDuration(ms){
+  const t=Math.max(0,Math.floor(ms/1000)); const h=Math.floor(t/3600),m=Math.floor((t%3600)/60),s=t%60;
+  const p=n=>String(n).padStart(2,'0');
+  return h>0?`${h}:${p(m)}:${p(s)}`:`${p(m)}:${p(s)}`;
+}
+// "Xm Ys left" — human-friendly ETA label shown in the progress row
+function fmtEtaLabel(ms){
+  const t=Math.max(0,Math.floor(ms/1000));
+  const h=Math.floor(t/3600), m=Math.floor((t%3600)/60), s=t%60;
+  if(h>0) return `${h}h ${m}m ${s}s left`;
+  if(m>0) return `${m}m ${s}s left`;
+  return `${s}s left`;
+}
 function timeAgo(iso){ if(!iso)return''; const s=Math.floor((Date.now()-new Date(iso).getTime())/1000); if(s<60)return `${s}s ago`; if(s<3600)return `${Math.floor(s/60)}m ago`; return `${Math.floor(s/3600)}h ago`; }
 </script>
 </body>
