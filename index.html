@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>StreamAdda v8 — Control Panel</title>
+<title>StreamAdda v9 — Control Panel</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
@@ -828,6 +828,113 @@ dialog::backdrop{background:rgba(0,0,0,.25);backdrop-filter:blur(3px)}
   border-radius:5px;
   border:1.5px solid;
 }
+/* ============================================================
+   LIVE GITHUB ASSET COUNTER BADGE
+   ============================================================ */
+.asset-badge-wrap{
+  display:flex;
+  align-items:center;
+  gap:.5rem;
+  flex-wrap:wrap;
+  margin:-.4rem 0 1.1rem;
+}
+.asset-badge{
+  display:inline-flex;
+  align-items:center;
+  gap:.45rem;
+  font-size:12px;
+  font-weight:500;
+  letter-spacing:.005em;
+  padding:.45rem .8rem;
+  border-radius:999px;
+  border:1.5px solid var(--border);
+  background:var(--surface);
+  color:var(--text-sec);
+  box-shadow:var(--shadow-sm);
+  transition:background .25s var(--e-out), border-color .25s var(--e-out), color .25s var(--e-out);
+}
+.asset-badge svg{width:14px;height:14px;flex-shrink:0}
+.asset-badge b{font-weight:700;color:var(--text)}
+.asset-badge .asset-sep{color:var(--placeholder);margin:0 .1rem;font-weight:400}
+.asset-badge .asset-total{color:var(--muted);font-weight:500}
+.asset-badge.scanning{
+  background:var(--sky-bg);border-color:var(--sky-bd);color:var(--sky);
+}
+.asset-badge.ok{
+  /* Soft emerald active status */
+  background:var(--ok-bg);
+  border-color:var(--ok-bd);
+  color:var(--ok-text);
+  text-shadow:0 1px 0 rgba(255,255,255,.6);
+}
+.asset-badge.ok b{color:var(--ok-text)}
+.asset-badge.ok svg{color:var(--ok)}
+.asset-badge.err{
+  background:var(--danger-bg);
+  border-color:var(--danger-bd);
+  color:var(--danger-text);
+}
+.asset-badge.err svg{color:var(--danger)}
+.spin{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ============================================================
+   ADVANCED FEATURE HIGHLIGHT CARDS
+   Emerald active states + thin distinct borders + soft shadows
+   ============================================================ */
+.feature-card{
+  border:1.5px solid var(--border);
+  border-radius:var(--radius);
+  background:var(--surface);
+  padding:.85rem .95rem;
+  margin-bottom:.9rem;
+  box-shadow:var(--shadow-sm);
+  transition:border-color .25s var(--e-out), background .25s var(--e-out), box-shadow .25s var(--e-out);
+}
+.feature-card.active{
+  border-color:var(--ok-bd);
+  background:var(--ok-bg);
+  box-shadow:0 2px 10px rgba(22,163,74,.10);
+}
+.feature-card .feature-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:.6rem;
+}
+.feature-card .feature-title{
+  display:flex;align-items:center;gap:.5rem;
+  font-size:13px;font-weight:600;color:var(--text);
+}
+.feature-card .feature-title svg{width:16px;height:16px;color:var(--muted);flex-shrink:0}
+.feature-card.active .feature-title svg{color:var(--ok)}
+.feat-status{
+  display:inline-flex;align-items:center;gap:.3rem;
+  font-size:10px;font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;
+  padding:.18rem .55rem;border-radius:999px;
+  background:var(--surface2);color:var(--muted);
+  border:1px solid var(--border);
+  white-space:nowrap;
+}
+.feat-status .dot{width:6px;height:6px;border-radius:50%;background:var(--muted)}
+.feature-card.active .feat-status{
+  background:#ffffff;color:var(--ok-text);border-color:var(--ok-bd);
+  text-shadow:0 1px 0 rgba(255,255,255,.7);
+}
+.feature-card.active .feat-status .dot{background:var(--ok);animation:pulse 1.6s infinite}
+.feature-tip{
+  margin-top:.55rem;
+  font-size:11px;
+  line-height:1.55;
+  color:var(--muted);
+  border-top:1px dashed var(--border);
+  padding-top:.5rem;
+}
+.feature-card.active .feature-tip{color:var(--ok-text)}
+.feature-tip b{color:var(--text-sec)}
+.feature-card.active .feature-tip b{color:var(--ok-text)}
+
 .chip-photo{background:var(--purple-bg);color:var(--purple);border-color:var(--purple-bd)}
 .chip-video{background:var(--sky-bg);color:var(--sky);border-color:var(--sky-bd)}
 .chip-both{background:var(--primary-bg);color:var(--primary);border-color:var(--primary-bd)}
@@ -876,6 +983,18 @@ dialog::backdrop{background:rgba(0,0,0,.25);backdrop-filter:blur(3px)}
         <i data-lucide="refresh-cw" style="width:11px;height:11px"></i>&nbsp;Refresh
       </button>
     </div>
+  </div>
+
+  <!-- ============================================================
+       LIVE GITHUB ASSET COUNTER BADGE
+       Populated by scanRepoAssets() on load + after every connection
+       and dispatch. Hidden until GitHub is configured.
+       ============================================================ -->
+  <div class="asset-badge-wrap">
+    <span id="asset-badge" class="asset-badge" style="display:none"></span>
+    <button type="button" id="asset-rescan" class="btn btn-ghost btn-xs" onclick="scanRepoAssets()" title="Re-scan repository root for assets" style="display:none">
+      <i data-lucide="refresh-cw" style="width:10px;height:10px"></i>&nbsp;Re-scan
+    </button>
   </div>
 
   <!-- Stream card grid -->
@@ -964,7 +1083,7 @@ dialog::backdrop{background:rgba(0,0,0,.25);backdrop-filter:blur(3px)}
   </div>
   <div class="dlg-foot">
     <button class="btn btn-ghost" onclick="document.getElementById('dlg-cfg').close()">Cancel</button>
-    <button class="btn btn-primary" onclick="saveCfg()">
+    <button type="button" class="btn btn-primary" onclick="saveCfg(event)">
       <i data-lucide="save" style="width:13px;height:13px"></i>
       Save &amp; connect
     </button>
@@ -1034,9 +1153,12 @@ dialog::backdrop{background:rgba(0,0,0,.25);backdrop-filter:blur(3px)}
     <div class="sep-label">Asset Configuration</div>
 
     <!-- ── ASSET MODE selector (3 tabs) ── -->
-    <div class="field">
-      <label>Streaming Mode</label>
-      <div class="mode-tabs" role="tablist">
+    <div class="feature-card active" id="mode-card">
+      <div class="feature-head">
+        <span class="feature-title"><i data-lucide="clapperboard"></i> Streaming Mode</span>
+        <span class="feat-status" id="mode-status"><span class="dot"></span> Sequential Concat</span>
+      </div>
+      <div class="mode-tabs" role="tablist" style="margin-top:.7rem;margin-bottom:0">
         <button class="mode-tab" id="mode-photo" onclick="setMode('photo_only')" type="button" role="tab">
           <i data-lucide="image" style="width:12px;height:12px"></i>
           Photo Only
@@ -1050,21 +1172,29 @@ dialog::backdrop{background:rgba(0,0,0,.25);backdrop-filter:blur(3px)}
           Photo + Video
         </button>
       </div>
-      <div class="tip" id="mode-tip">
+      <div class="feature-tip" id="mode-tip">
         <b>Photo → then → Video:</b> The photo loops for the bulk of the duration, then the video plays once at the end. The total time is split automatically.
       </div>
     </div>
 
-    <!-- ── GOOGLE DRIVE TOGGLE ── -->
-    <div class="toggle-row" id="drive-toggle-row" onclick="toggleDriveMode()" role="button" tabindex="0">
-      <div class="toggle-label">
-        <i data-lucide="cloud" id="drive-icon"></i>
-        <div class="toggle-text">
-          <strong>Google Drive Source Mode</strong>
-          <small id="drive-toggle-desc">OFF — using files from GitHub repository</small>
+    <!-- ── GOOGLE DRIVE SOURCE SWITCH (highlighted feature card) ── -->
+    <div class="feature-card" id="drive-card">
+      <div class="toggle-row" id="drive-toggle-row" onclick="toggleDriveMode()" role="button" tabindex="0" style="margin:0;border:none;background:transparent;padding:0">
+        <div class="toggle-label">
+          <i data-lucide="cloud" id="drive-icon"></i>
+          <div class="toggle-text">
+            <strong>Google Drive Source Switch</strong>
+            <small id="drive-toggle-desc">OFF — using files from GitHub repository</small>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:.6rem">
+          <span class="feat-status" id="drive-status"><span class="dot"></span> Off</span>
+          <div class="switch" id="drive-switch"></div>
         </div>
       </div>
-      <div class="switch" id="drive-switch"></div>
+      <div class="feature-tip">
+        <b>How it works:</b> When ON, your photo/video assets are downloaded from public Google Drive share links at runtime (large-file cookie bypass handled automatically). When OFF, assets are read straight from your GitHub repository root — keeping streaming personal, secure, and drop-free.
+      </div>
     </div>
 
     <!-- LOCAL MODE: filename inputs (shown when Drive is OFF) -->
@@ -1122,16 +1252,24 @@ dialog::backdrop{background:rgba(0,0,0,.25);backdrop-filter:blur(3px)}
       </div>
     </div>
 
-    <!-- ── AMBIENT AUDIO TOGGLE ── -->
-    <div class="toggle-row" id="ambient-toggle-row" onclick="toggleAmbient()" role="button" tabindex="0">
-      <div class="toggle-label">
-        <i data-lucide="volume-2" id="ambient-icon"></i>
-        <div class="toggle-text">
-          <strong>Ambient Background Sound</strong>
-          <small id="ambient-toggle-desc">OFF — inaudible white noise floor (YouTube-safe)</small>
+    <!-- ── AMBIENT BACKGROUND TRAFFIC NOISE FILTER (highlighted feature card) ── -->
+    <div class="feature-card" id="ambient-card">
+      <div class="toggle-row" id="ambient-toggle-row" onclick="toggleAmbient()" role="button" tabindex="0" style="margin:0;border:none;background:transparent;padding:0">
+        <div class="toggle-label">
+          <i data-lucide="volume-2" id="ambient-icon"></i>
+          <div class="toggle-text">
+            <strong>Ambient Background Traffic Noise Filter</strong>
+            <small id="ambient-toggle-desc">OFF — inaudible white noise floor (YouTube-safe)</small>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:.6rem">
+          <span class="feat-status" id="ambient-status"><span class="dot"></span> Off</span>
+          <div class="switch" id="ambient-switch"></div>
         </div>
       </div>
-      <div class="switch" id="ambient-switch"></div>
+      <div class="feature-tip">
+        <b>How it works:</b> When ON, a synthesised outdoor traffic / car-horn ambient bed is mixed under your stream to keep it feeling live and organic. When OFF, an inaudible white-noise floor is injected so the audio track never fully silences — a YouTube-safe technique that prevents “no audio” drops.
+      </div>
     </div>
 
     <div class="sep-label">Stream Settings</div>
@@ -1184,7 +1322,7 @@ dialog::backdrop{background:rgba(0,0,0,.25);backdrop-filter:blur(3px)}
   </div><!-- /dlg-body -->
   <div class="dlg-foot">
     <button class="btn btn-ghost" onclick="document.getElementById('dlg').close()">Cancel</button>
-    <button class="btn btn-primary" id="submit-btn" onclick="submitStream()">
+    <button type="button" class="btn btn-primary" id="submit-btn" onclick="submitStream(event)">
       <i data-lucide="radio" style="width:13px;height:13px"></i>
       <span id="submit-lbl">Start stream</span>
     </button>
@@ -1225,7 +1363,7 @@ dialog::backdrop{background:rgba(0,0,0,.25);backdrop-filter:blur(3px)}
   </div>
   <div class="dlg-foot">
     <button class="btn btn-ghost" onclick="document.getElementById('dlg-edit').close()">Cancel</button>
-    <button class="btn btn-primary" onclick="submitEdit()">
+    <button type="button" class="btn btn-primary" onclick="submitEdit(event)">
       <i data-lucide="check" style="width:13px;height:13px"></i> Apply
     </button>
   </div>
@@ -1256,6 +1394,11 @@ const LS_STREAMS  = 'sa_streams_v8';         // localStorage key for stream list
 const POLL_MS     = 8000;    // 8-second poll interval — safe from GitHub API 429
 const FIND_RUN_RETRIES = 15; // max attempts to find the dispatched run ID
 const MAX_DURATION_MIN = 345; // hard safety cap — must match workflow clamp
+
+// Recognised asset extensions for the live repository asset counter
+const PHOTO_EXTS = ['jpg','jpeg','png','webp','gif','bmp','tiff','heic'];
+const VIDEO_EXTS = ['mp4','mov','mkv','webm','avi','m4v','flv','ts'];
+const AUDIO_EXTS = ['mp3','wav','aac','m4a','ogg','flac'];
 
 // ============================================================
 // GLOBAL STATE
@@ -1290,6 +1433,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
   icons();
+  // ---- Live GitHub asset counter: scan repository root on page load ----
+  scanRepoAssets();
 });
 
 // ============================================================
@@ -1322,7 +1467,7 @@ function updateCfgUI() {
   if (S.cfg && S.cfg.token && S.cfg.owner && S.cfg.repo) {
     newBtn.disabled = false;
     newBtn.title    = 'Launch new live stream via GitHub Actions';
-    status.textContent = `✓ ${S.cfg.owner}/${S.cfg.repo}`;
+    status.textContent = `��� ${S.cfg.owner}/${S.cfg.repo}`;
     status.style.color = 'var(--ok)';
   } else {
     newBtn.disabled = true;
@@ -1350,6 +1495,82 @@ async function ghFetch(path, opts = {}) {
 }
 
 // ============================================================
+// LIVE GITHUB ASSET COUNTER
+// Scans the repository ROOT directory via the GitHub Contents API
+// (GET /repos/{owner}/{repo}/contents/), filters files by extension,
+// counts photos / videos / audio, and paints the info badge in the UI.
+// Runs on page load (if configured) and after every successful connection
+// and dispatch.
+// ============================================================
+async function scanRepoAssets() {
+  const badge = document.getElementById('asset-badge');
+  if (!badge) return;
+
+  // Not configured yet — hide the badge and bail cleanly.
+  if (!S.cfg || !S.cfg.token || !S.cfg.owner || !S.cfg.repo) {
+    badge.style.display = 'none';
+    return;
+  }
+
+  const { owner, repo } = S.cfg;
+  badge.style.display = 'inline-flex';
+  badge.className = 'asset-badge scanning';
+  badge.innerHTML = '<i data-lucide="loader" class="spin"></i> Scanning repository assets…';
+  icons();
+
+  try {
+    const res = await ghFetch(
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/`
+    );
+
+    if (!res.ok) {
+      // Surface the *exact* reason the scan failed — no silent failures.
+      let reason;
+      if (res.status === 404)      reason = 'repository or path not found (check owner/repo)';
+      else if (res.status === 401) reason = 'PAT invalid or expired';
+      else if (res.status === 403) reason = 'access forbidden or rate-limited (403)';
+      else {
+        const body = await res.json().catch(() => ({}));
+        reason = (body && body.message) ? body.message : ('HTTP ' + res.status);
+      }
+      badge.className = 'asset-badge err';
+      badge.innerHTML = `<i data-lucide="alert-triangle"></i> Asset scan failed: ${esc(reason)}`;
+      icons();
+      return;
+    }
+
+    const items = await res.json();
+    const files = Array.isArray(items) ? items.filter(it => it && it.type === 'file') : [];
+
+    let photos = 0, videos = 0, audio = 0, other = 0;
+    files.forEach(f => {
+      const ext = (f.name.split('.').pop() || '').toLowerCase();
+      if      (PHOTO_EXTS.includes(ext)) photos++;
+      else if (VIDEO_EXTS.includes(ext)) videos++;
+      else if (AUDIO_EXTS.includes(ext)) audio++;
+      else other++;
+    });
+
+    S.assetCounts = { photos, videos, audio, other, total: files.length, scannedAt: new Date().toISOString() };
+
+    const audioPart = audio > 0 ? ` <span class="asset-sep">|</span> <b>${audio}</b> Audio` : '';
+    badge.className = 'asset-badge ok';
+    badge.innerHTML =
+      `<i data-lucide="folder-check"></i> Repository Assets: ` +
+      `<b>${photos}</b> Photos Verified <span class="asset-sep">|</span> ` +
+      `<b>${videos}</b> Videos Uploaded${audioPart} ` +
+      `<span class="asset-sep">|</span> <span class="asset-total">${files.length} files total</span>`;
+    badge.title = `Scanned ${owner}/${repo} root at ${new Date().toLocaleTimeString()} — ` +
+      `${photos} photos, ${videos} videos, ${audio} audio, ${other} other.`;
+    icons();
+  } catch (err) {
+    badge.className = 'asset-badge err';
+    badge.innerHTML = `<i data-lucide="wifi-off"></i> Asset scan network error: ${esc(err.message)}`;
+    icons();
+  }
+}
+
+// ============================================================
 // OPEN GITHUB CONFIG DIALOG
 // ============================================================
 function openCfg() {
@@ -1366,7 +1587,8 @@ function openCfg() {
   icons();
 }
 
-async function saveCfg() {
+async function saveCfg(event) {
+  if (event) { event.preventDefault(); event.stopPropagation(); }
   const token    = document.getElementById('cfg-token').value.trim();
   const owner    = document.getElementById('cfg-owner').value.trim();
   const repo     = document.getElementById('cfg-repo').value.trim();
@@ -1430,6 +1652,9 @@ async function saveCfg() {
   saveCfgToStorage({ token, owner, repo, workflow });
   toast('GitHub configuration saved!', 'ok');
   if (!verify) document.getElementById('dlg-cfg').close();
+
+  // ---- Live GitHub asset counter: rescan repository root after every successful connection ----
+  scanRepoAssets();
 }
 
 // ============================================================
@@ -1477,6 +1702,14 @@ function setMode(mode) {
     photo_video: '<b>📸→🎬 Photo + Video:</b> The photo loops for the bulk of the time, then the video plays once at the end.',
   };
   document.getElementById('mode-tip').innerHTML = tips[mode];
+  // Update the emerald status pill on the mode feature-card
+  const statusLabels = {
+    photo_only:  'Photo Only',
+    video_only:  'Video Only',
+    photo_video: 'Sequential Concat',
+  };
+  const statusEl = document.getElementById('mode-status');
+  if (statusEl) statusEl.innerHTML = `<span class="dot"></span> ${statusLabels[mode]}`;
   // Show/hide local fields depending on mode
   syncAssetFieldVisibility();
   saveFormToStorage();
@@ -1506,6 +1739,9 @@ function toggleDriveMode() {
   const icon = document.getElementById('drive-icon');
   sw.classList.toggle('on', S.driveMode);
   row.classList.toggle('on', S.driveMode);
+  document.getElementById('drive-card')?.classList.toggle('active', S.driveMode);
+  const driveStatus = document.getElementById('drive-status');
+  if (driveStatus) driveStatus.innerHTML = `<span class="dot"></span> ${S.driveMode ? 'Active' : 'Off'}`;
   desc.textContent = S.driveMode
     ? 'ON — download assets from Google Drive at runtime'
     : 'OFF — using files from GitHub repository';
@@ -1524,6 +1760,9 @@ function toggleAmbient() {
   const row  = document.getElementById('ambient-toggle-row');
   sw.classList.toggle('on', S.ambientAudio);
   row.classList.toggle('on', S.ambientAudio);
+  document.getElementById('ambient-card')?.classList.toggle('active', S.ambientAudio);
+  const ambStatus = document.getElementById('ambient-status');
+  if (ambStatus) ambStatus.innerHTML = `<span class="dot"></span> ${S.ambientAudio ? 'Active' : 'Off'}`;
   desc.textContent = S.ambientAudio
     ? 'ON — synthesised outdoor traffic/car horn ambient mix'
     : 'OFF — inaudible white noise floor (YouTube-safe)';
@@ -1649,7 +1888,13 @@ async function dispatchWorkflow(payload) {
   );
   if (res.status === 204) return true;
   const body = await res.json().catch(()=>({}));
-  throw new Error(body.message || `GitHub API ${res.status}`);
+  // Build a human-readable reason so the terminal log can echo *why* it failed.
+  let reason = body.message || `GitHub API ${res.status}`;
+  if (res.status === 401) reason = 'Invalid credentials — PAT is invalid or expired (401).';
+  else if (res.status === 404) reason = 'Repository or workflow path not found — check owner/repo (404).';
+  else if (res.status === 403) reason = `Access forbidden / rate-limited (403). ${body.message || ''}`.trim();
+  else if (res.status === 422) reason = `Workflow dispatch rejected (422). ${body.message || 'Verify the repository_dispatch trigger exists in your workflow.'}`.trim();
+  throw new Error(reason);
 }
 
 // ============================================================
@@ -1704,8 +1949,13 @@ async function getJobLogText(jobId) {
 // ============================================================
 // SUBMIT STREAM — build payload & dispatch
 // ============================================================
-async function submitStream() {
-  if (!S.cfg) { toast('Configure GitHub first', 'err'); return; }
+async function submitStream(event) {
+  // ---- CRITICAL FIX: halt native form submission / page reload BEFORE anything else ----
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  if (!S.cfg) { toast('Configure GitHub first', 'err'); return false; }
 
   // ---- Collect and validate fields ----
   const name       = document.getElementById('f-name').value.trim() || 'Live Stream';
@@ -1790,10 +2040,41 @@ async function submitStream() {
   try {
     await dispatchWorkflow(payload);
   } catch(err) {
+    // ---- DETAILED CONNECTION ERROR VISIBILITY ----
+    // Create a FAILED stream card so the exact reason is echoed inside the
+    // white-paper terminal window (not just a transient toast).
+    const failId = genId();
+    S.streams[failId] = {
+      id: failId,
+      name,
+      platform: S.platform,
+      ratio: S.ratio,
+      assetMode: S.assetMode,
+      driveMode: S.driveMode,
+      ambientAudio: S.ambientAudio,
+      durationMin: dur,
+      startAt, stopAt, ytVideoId,
+      dispatchedAt: new Date().toISOString(),
+      startedAt: null, runId: null, runUrl: null, jobId: null,
+      status: 'failed',
+      phase: 'failed',
+      frameCount: 0,
+      failReason: err.message,
+      logLines: [
+        `[${ts()}] ❌ Dispatch to GitHub Actions FAILED`,
+        `[${ts()}] Reason: ${err.message}`,
+        `[${ts()}] Endpoint: POST /repos/${S.cfg.owner}/${S.cfg.repo}/dispatches`,
+        `[${ts()}] Hint: verify PAT scopes (repo + workflow), owner/repo spelling, and that your workflow includes an "on: repository_dispatch" trigger.`,
+      ],
+      lastPollAt: null,
+      pollFailCount: 0,
+    };
+    persistStreams();
+    renderAll();
     toast(`Dispatch failed: ${err.message}`, 'err');
     btn.disabled = false;
     lbl.textContent = 'Start stream';
-    return;
+    return false;
   }
 
   // ---- Create local stream record ----
@@ -1830,10 +2111,16 @@ async function submitStream() {
   lbl.textContent = 'Start stream';
 
   renderAll();
-  toast('Stream dispatched! Searching for GitHub run…', 'inf');
+  toast('Stream dispatched! Searching for GitHub run��', 'inf');
 
   // ---- Start the run-finder (locates the actual Actions run ID) ----
   startFindRun(id, dispatchedAt);
+
+  // ---- Refresh the live repository asset counter after a successful dispatch ----
+  scanRepoAssets();
+
+  // Extra guard against any legacy native submission path.
+  return false;
 }
 
 // ============================================================
@@ -2081,7 +2368,8 @@ function openEdit(id) {
   icons();
 }
 
-function submitEdit() {
+function submitEdit(event) {
+  if (event) { event.preventDefault(); event.stopPropagation(); }
   const id = S.editId;
   if (!id || !S.streams[id]) { document.getElementById('dlg-edit').close(); return; }
   const s = S.streams[id];
