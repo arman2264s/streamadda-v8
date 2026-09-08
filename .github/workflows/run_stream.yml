@@ -1,4 +1,4 @@
-name: "StreamAdda v8 — GitHub Actions Streaming Engine"
+name: "StreamAdda v9 — GitHub Actions Streaming Engine (Bulletproof)"
 
 # ==============================================================
 # TRIGGERS
@@ -130,26 +130,79 @@ jobs:
       # ============================================================
       - name: "[2/8] Extract and validate parameters"
         id: params
+        # Pass the raw bundle through env (GitHub injection-safe pattern):
+        # the value arrives as a plain env var and is never expanded by bash.
+        env:
+          SA_PAYLOAD_CONFIG: ${{ github.event.client_payload.payload_config }}
         shell: bash
         run: |
+          # ============================================================
+          # v9 ABSOLUTE DURATION CLAMP CONSTANT (declared FIRST)
+          # GitHub Actions force-kills any job at 360 minutes (6h cap).
+          # We enforce a hard mathematical ceiling of 345 minutes so
+          # there is always ~15 min of headroom for install + teardown.
+          # This constant is applied to TOTAL_MINUTES the instant it is
+          # parsed below.
+          # ============================================================
+          readonly ABSOLUTE_MAX_MINUTES=345
+
           # ---- Pick values from the correct trigger source ----
           if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-            RAW_NAME="${{ github.event.client_payload.stream_name }}"
+            # ========================================================
+            # v9 10-PROPERTY-SAFE CONTRACT (GitHub API 422 FIX)
+            #
+            # The Netlify frontend now sends only FIVE clean top-level
+            # client_payload fields. Every advanced option is bundled
+            # into ONE compressed JSON string: `payload_config`.
+            # We decode it here with native `jq` (pre-installed on the
+            # ubuntu-latest runner). This is future-proof: new options
+            # can be added to payload_config forever without breaching
+            # GitHub's 10-property client_payload ceiling.
+            # ========================================================
             RAW_KEY="${{ github.event.client_payload.stream_key }}"
-            RAW_RATIO="${{ github.event.client_payload.ratio }}"
             RAW_MINUTES="${{ github.event.client_payload.total_minutes }}"
+            RAW_RATIO="${{ github.event.client_payload.ratio }}"
             RAW_PLATFORM="${{ github.event.client_payload.platform }}"
-            RAW_ASSET_MODE="${{ github.event.client_payload.asset_mode }}"
-            RAW_DRIVE_MODE="${{ github.event.client_payload.drive_mode }}"
-            RAW_PHOTO_DRIVE="${{ github.event.client_payload.photo_drive_url }}"
-            RAW_VIDEO_DRIVE="${{ github.event.client_payload.video_drive_url }}"
-            RAW_PHOTO_FILE="${{ github.event.client_payload.photo_filename }}"
-            RAW_VIDEO_FILE="${{ github.event.client_payload.video_filename }}"
-            RAW_AMBIENT="${{ github.event.client_payload.ambient_audio }}"
-            RAW_BACKUP="${{ github.event.client_payload.backup_rtmp }}"
-            RAW_YTID="${{ github.event.client_payload.youtube_video_id }}"
-            RAW_START_AT="${{ github.event.client_payload.start_at }}"
-            RAW_STOP_AT="${{ github.event.client_payload.stop_at }}"
+
+            # ---- Capture the unified bundle from the step env var ----
+            # SA_PAYLOAD_CONFIG (declared in this step's env:) holds the
+            # raw JSON string. It is a normal env var, so no quote or shell
+            # metacharacter inside the JSON can ever be executed.
+            PAYLOAD_CONFIG_JSON="${SA_PAYLOAD_CONFIG:-}"
+
+            # ---- Default to an empty object when the bundle is blank ----
+            if [ -z "$(printf '%s' "$PAYLOAD_CONFIG_JSON" | tr -d '[:space:]')" ]; then
+              echo "⚠  [SA] payload_config was empty. Falling back to defaults."
+              PAYLOAD_CONFIG_JSON='{}'
+            fi
+
+            # ---- Validate JSON strictly before decoding ----
+            if ! printf '%s' "$PAYLOAD_CONFIG_JSON" | jq empty >/dev/null 2>&1; then
+              echo "" >&2
+              echo "[SA_STATUS:FAILED:payload_config is not valid JSON — cannot decode advanced options.]" >&2
+              echo "❌ [SA] FATAL: payload_config failed jq validation." >&2
+              exit 1
+            fi
+
+            # ---- Helper: securely read one key with native jq ----
+            # Example (as requested): jq -r '.ambient_audio'
+            pc() { printf '%s' "$PAYLOAD_CONFIG_JSON" | jq -r --arg k "$1" '.[$k] // empty'; }
+
+            RAW_NAME="$(pc stream_name)"
+            RAW_ASSET_MODE="$(pc asset_mode)"
+            RAW_DRIVE_MODE="$(pc drive_mode)"
+            RAW_PHOTO_DRIVE="$(pc photo_drive_url)"
+            RAW_VIDEO_DRIVE="$(pc video_drive_url)"
+            RAW_PHOTO_FILE="$(pc photo_filename)"
+            RAW_VIDEO_FILE="$(pc video_filename)"
+            RAW_AMBIENT="$(pc ambient_audio)"
+            RAW_BACKUP="$(pc backup_rtmp)"
+            RAW_YTID="$(pc youtube_video_id)"
+            RAW_START_AT="$(pc start_at)"
+            RAW_STOP_AT="$(pc stop_at)"
+
+            AMBIENT_AUDIO_PROBE="$(printf '%s' "$PAYLOAD_CONFIG_JSON" | jq -r '.ambient_audio // "false"' 2>/dev/null)"
+            echo "🔎 [SA] Decoded payload_config bundle via jq (ambient_audio=${AMBIENT_AUDIO_PROBE})."
           else
             RAW_NAME="${{ github.event.inputs.stream_name }}"
             RAW_KEY="${{ github.event.inputs.stream_key }}"
@@ -214,9 +267,9 @@ jobs:
             echo "\u26a0  [SA] total_minutes < 2. Clamping to 2."
             TOTAL_MINUTES=2
           fi
-          if [ "$TOTAL_MINUTES" -gt 345 ]; then
+          if [ "$TOTAL_MINUTES" -gt "$ABSOLUTE_MAX_MINUTES" ]; then
             echo "\u26a0  [SA] total_minutes=${TOTAL_MINUTES} exceeds safety cap. CLAMPING TO 345."
-            TOTAL_MINUTES=345
+            TOTAL_MINUTES=$ABSOLUTE_MAX_MINUTES
           fi
 
           # ---- VALIDATE: asset mode ----
@@ -385,6 +438,53 @@ jobs:
           #   https://drive.google.com/file/d/FILE_ID/view
           #   https://drive.google.com/open?id=FILE_ID
           # ----------------------------------------------------------
+          # ----------------------------------------------------------
+          # v9 FAIL-SAFE FALLBACK ENGINE
+          # If a Google Drive asset cannot be fetched or validated, we
+          # recover by streaming the default placeholders committed to
+          # the repo root (live_photo.jpg / live_video.mp4). If those are
+          # ALSO absent, we synthesise a minimal placeholder with FFmpeg
+          # so the pipeline NEVER hangs in an infinite "starting" cycle.
+          # ----------------------------------------------------------
+          fallback_asset() {
+            local KIND="$1"
+            if [ "$KIND" = "photo" ]; then
+              if [ "${PHOTO_FILENAME}" != "live_photo.jpg" ] && [ -f "${PHOTO_FILENAME}" ] && [ -s "${PHOTO_FILENAME}" ]; then
+                cp -f "${PHOTO_FILENAME}" live_photo.jpg
+                echo "OK [SA] Fallback engaged: repo placeholder '${PHOTO_FILENAME}' -> live_photo.jpg"
+              elif [ -f "live_photo.jpg" ] && [ -s "live_photo.jpg" ]; then
+                echo "OK [SA] Fallback engaged: using repo root 'live_photo.jpg'."
+              else
+                echo "WARN [SA] No repo photo placeholder. Synthesising a safe placeholder image."
+                ffmpeg -hide_banner -y -f lavfi -i "color=c=0x0f172a:s=720x1280:d=1" -frames:v 1 live_photo.jpg >/dev/null 2>&1 || \
+                ffmpeg -hide_banner -y -f lavfi -i "color=c=black:s=720x1280:d=1" -frames:v 1 live_photo.jpg >/dev/null 2>&1
+              fi
+            else
+              if [ "${VIDEO_FILENAME}" != "live_video.mp4" ] && [ -f "${VIDEO_FILENAME}" ] && [ -s "${VIDEO_FILENAME}" ]; then
+                cp -f "${VIDEO_FILENAME}" live_video.mp4
+                echo "OK [SA] Fallback engaged: repo placeholder '${VIDEO_FILENAME}' -> live_video.mp4"
+              elif [ -f "live_video.mp4" ] && [ -s "live_video.mp4" ]; then
+                echo "OK [SA] Fallback engaged: using repo root 'live_video.mp4'."
+              else
+                echo "WARN [SA] No repo video placeholder. Synthesising a safe 5s placeholder clip."
+                ffmpeg -hide_banner -y \
+                  -f lavfi -i "color=c=black:s=720x1280:r=30:d=5" \
+                  -f lavfi -i "anoisesrc=r=44100:amplitude=0.001:color=white" \
+                  -shortest -t 5 -c:v libx264 -pix_fmt yuv420p \
+                  -c:a aac -b:a 128k -ar 44100 -ac 2 live_video.mp4 >/dev/null 2>&1
+              fi
+            fi
+            # Final integrity gate — if recovery STILL produced nothing, fail loudly.
+            if [ "$KIND" = "photo" ] && { [ ! -f live_photo.jpg ] || [ ! -s live_photo.jpg ]; }; then
+              echo "[SA_STATUS:FAILED:Photo asset unrecoverable after Drive + placeholder fallback]" >&2
+              exit 1
+            fi
+            if [ "$KIND" = "video" ] && { [ ! -f live_video.mp4 ] || [ ! -s live_video.mp4 ]; }; then
+              echo "[SA_STATUS:FAILED:Video asset unrecoverable after Drive + placeholder fallback]" >&2
+              exit 1
+            fi
+          }
+
           download_from_drive() {
             local DRIVE_URL="$1"
             local OUTPUT_PATH="$2"
@@ -422,7 +522,7 @@ jobs:
               echo "    Large file detected. Using confirmation token: ${CONFIRM_TOKEN}"
               curl -Lb "$COOKIE_JAR" \
                 "https://drive.google.com/uc?export=download&id=${FILE_ID}&confirm=${CONFIRM_TOKEN}" \
-                -o "$OUTPUT_PATH" \
+                -o "${OUTPUT_PATH}.part" \
                 --progress-bar \
                 2>&1
             else
@@ -430,24 +530,33 @@ jobs:
               echo "    Standard file. Downloading directly..."
               curl -L \
                 "https://drive.usercontent.google.com/download?id=${FILE_ID}&export=download&authuser=0" \
-                -o "$OUTPUT_PATH" \
+                -o "${OUTPUT_PATH}.part" \
                 --progress-bar \
                 2>&1
             fi
 
             rm -f "$COOKIE_JAR"
 
-            # Verify download succeeded and file is non-empty
-            if [ ! -f "$OUTPUT_PATH" ] || [ ! -s "$OUTPUT_PATH" ]; then
-              echo "\u274c [SA] FATAL: Drive download failed or produced an empty file for ${ASSET_LABEL}." >&2
-              echo "    Ensure the file is publicly shared ('Anyone with the link can view')." >&2
-              echo "[SA_STATUS:FAILED:Google Drive download failed for ${ASSET_LABEL}]"
-              exit 1
+            # ============================================================
+            # HARD RECOVERY VALIDATION (v9 fail-safe)
+            # Validate the freshly downloaded temp file. On ANY failure we
+            # DO NOT exit the job. Instead we return non-zero so the caller
+            # can engage the repo-placeholder fallback and keep the pipeline
+            # from hanging forever in a "starting" cycle.
+            # ============================================================
+            if [ ! -f "${OUTPUT_PATH}.part" ] || [ ! -s "${OUTPUT_PATH}.part" ]; then
+              echo "WARN [SA] Drive download failed or returned an EMPTY file for ${ASSET_LABEL}." >&2
+              echo "    (Broken link, or 'Anyone with the link can view' is not set.)" >&2
+              rm -f "${OUTPUT_PATH}.part"
+              return 1
             fi
+
+            # Commit the validated temp file into place atomically.
+            mv -f "${OUTPUT_PATH}.part" "${OUTPUT_PATH}"
 
             local FILE_SIZE
             FILE_SIZE=$(du -sh "$OUTPUT_PATH" | awk '{print $1}')
-            echo "\u2705 [SA] ${ASSET_LABEL} downloaded successfully. Size: ${FILE_SIZE}"
+            echo "OK [SA] ${ASSET_LABEL} downloaded and verified. Size: ${FILE_SIZE}"
           }
 
           # ----------------------------------------------------------
@@ -463,11 +572,15 @@ jobs:
                 echo "[SA_STATUS:FAILED:photo_drive_url missing for mode ${ASSET_MODE}]"
                 exit 1
               fi
-              download_from_drive "$PHOTO_DRIVE_URL" "live_photo.jpg" "PHOTO"
-              # Quick sanity check: verify it is actually an image
-              file live_photo.jpg | grep -qiE 'image|jpeg|png|jpg' || {
-                echo "\u26a0  [SA] Warning: live_photo.jpg may not be a valid image file."
-              }
+              if ! download_from_drive "$PHOTO_DRIVE_URL" "live_photo.jpg" "PHOTO"; then
+                echo "WARN [SA] Drive PHOTO fetch failed. Engaging fail-safe fallback."
+                fallback_asset photo
+              fi
+              # Integrity check: confirm it is a real image; otherwise fall back.
+              if ! file live_photo.jpg | grep -qiE 'image|jpeg|png|jpg'; then
+                echo "WARN [SA] live_photo.jpg is not a valid image. Engaging fallback."
+                fallback_asset photo
+              fi
             fi
 
             if [ "$NEEDS_VIDEO" = "true" ]; then
@@ -476,7 +589,10 @@ jobs:
                 echo "[SA_STATUS:FAILED:video_drive_url missing for mode ${ASSET_MODE}]"
                 exit 1
               fi
-              download_from_drive "$VIDEO_DRIVE_URL" "live_video.mp4" "VIDEO"
+              if ! download_from_drive "$VIDEO_DRIVE_URL" "live_video.mp4" "VIDEO"; then
+                echo "WARN [SA] Drive VIDEO fetch failed. Engaging fail-safe fallback."
+                fallback_asset video
+              fi
             fi
 
           else
@@ -637,22 +753,22 @@ jobs:
           echo "\u23f0 [SA] Scheduled start time: ${START_AT}"
 
           DELAY=$(python3 - <<PYEOF
-import datetime, sys
-try:
-    s = "${START_AT}".strip()
-    if not s: print(0); sys.exit(0)
-    if s.endswith('Z'): s = s[:-1] + '+00:00'
-    target = datetime.datetime.fromisoformat(s)
-    if target.tzinfo is None:
-        target = target.replace(tzinfo=datetime.timezone.utc)
-    now = datetime.datetime.now(datetime.timezone.utc)
-    delay = (target - now).total_seconds()
-    print(max(0, int(delay)))
-except Exception as e:
-    print(f"[SA][WARN] Could not parse start_at: {e}", file=sys.stderr)
-    print(0)
-PYEOF
-)
+          import datetime, sys
+          try:
+              s = "${START_AT}".strip()
+              if not s: print(0); sys.exit(0)
+              if s.endswith('Z'): s = s[:-1] + '+00:00'
+              target = datetime.datetime.fromisoformat(s)
+              if target.tzinfo is None:
+                  target = target.replace(tzinfo=datetime.timezone.utc)
+              now = datetime.datetime.now(datetime.timezone.utc)
+              delay = (target - now).total_seconds()
+              print(max(0, int(delay)))
+          except Exception as e:
+              print(f"[SA][WARN] Could not parse start_at: {e}", file=sys.stderr)
+              print(0)
+          PYEOF
+          )
 
           if [ "$DELAY" -gt 0 ]; then
             MAX_WAIT=18000  # 5 hours hard cap on schedule wait
@@ -788,17 +904,17 @@ PYEOF
           # Override with stop_at if it's earlier than our deadline
           if [ -n "$STOP_AT" ]; then
             STOP_SECS=$(python3 - <<PYEOF
-import datetime, sys
-try:
-    s = "${STOP_AT}".strip()
-    if s.endswith('Z'): s = s[:-1] + '+00:00'
-    t = datetime.datetime.fromisoformat(s)
-    if t.tzinfo is None: t = t.replace(tzinfo=datetime.timezone.utc)
-    now = datetime.datetime.now(datetime.timezone.utc)
-    print(max(0, int((t - now).total_seconds())))
-except: print(-1)
-PYEOF
-)
+          import datetime, sys
+          try:
+              s = "${STOP_AT}".strip()
+              if s.endswith('Z'): s = s[:-1] + '+00:00'
+              t = datetime.datetime.fromisoformat(s)
+              if t.tzinfo is None: t = t.replace(tzinfo=datetime.timezone.utc)
+              now = datetime.datetime.now(datetime.timezone.utc)
+              print(max(0, int((t - now).total_seconds())))
+          except: print(-1)
+          PYEOF
+          )
             if [ "$STOP_SECS" -gt 0 ] && [ "$STOP_SECS" -lt "$TIMEOUT_SECONDS" ]; then
               echo "\u23f0 [SA] Hard stop_at deadline is earlier: ${STOP_SECS}s from now."
               TIMEOUT_SECONDS="$STOP_SECS"
@@ -917,6 +1033,11 @@ PYEOF
               -max_muxing_queue_size 1024 \
               -f flv \
               -flvflags no_duration_filesize \
+              -rw_timeout 15000000 \
+              -reconnect 1 \
+              -reconnect_at_eof 1 \
+              -reconnect_streamed 1 \
+              -reconnect_delay_max 5 \
               "${RTMP_URL}" \
             2>>"$FFMPEG_LOG"
           }
@@ -1134,6 +1255,7 @@ PYEOF
               -b:v 100k -pix_fmt yuv420p -r 30 -g 30 -keyint_min 30 -sc_threshold 0 \
               -c:a aac -b:a 128k -ar 44100 -ac 2 \
               -f flv -flvflags no_duration_filesize \
+              -reconnect 1 -reconnect_at_eof 1 -reconnect_streamed 1 -reconnect_delay_max 5 \
               "${RTMP_URL}" \
             && echo "\u2705 [SA] End-of-stream signal delivered. YouTube Studio going offline." \
             || echo "\u26a0  [SA] End signal timed out (YouTube will self-timeout in ~30s)."
