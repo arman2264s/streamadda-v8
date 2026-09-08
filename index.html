@@ -951,7 +951,7 @@ dialog::backdrop{background:rgba(0,0,0,.25);backdrop-filter:blur(3px)}
   <div class="nav-brand">
     <i data-lucide="radio" style="width:19px;height:19px;color:var(--primary)"></i>
     StreamAdda
-    <span style="color:var(--muted);font-weight:400;font-size:.8rem;margin-left:.1rem">v8</span>
+    <span style="color:var(--muted);font-weight:400;font-size:.8rem;margin-left:.1rem">v9</span>
   </div>
   <div class="nav-right">
     <!-- Live stream counter pill — hidden when 0 streams online -->
@@ -2005,46 +2005,71 @@ async function submitStream(event) {
   if (ytMatch) ytVideoId = ytMatch[1];
 
   // ============================================================
-  // BUILD THE client_payload  (v9 — 10-PROPERTY-SAFE CONTRACT)
+  // BUILD THE client_payload — BULLETPROOF v9 SINGLE-BUNDLE CONTRACT
   //
-  // FIX FOR GitHub API 422:
-  //   "No more than 10 properties are allowed; 16 were supplied"
+  // ROOT-CAUSE FIX 1 — GitHub API 422 ELIMINATED:
+  //   The old build sent 16 flat top-level properties and GitHub
+  //   rejected it: "No more than 10 properties are allowed".
+  //   v9 sends exactly ONE top-level property: `payload_config`.
+  //   GitHub's 10-property ceiling is permanently bypassed.
   //
-  // GitHub's repository_dispatch API hard-limits client_payload to a
-  // MAXIMUM OF 10 TOP-LEVEL PROPERTIES. The old v8 build sent 16 flat
-  // fields and was rejected. v9 sends only FIVE clean top-level fields
-  // and bundles EVERY advanced option, dynamic filename, Drive URL,
-  // noise/mode flag, and schedule value into ONE compressed JSON string
-  // property: `payload_config`. This is future-proof — any number of
-  // new options can be added inside payload_config without ever again
-  // breaching the 10-property ceiling.
+  // ROOT-CAUSE FIX 2 — JSON DECODE CRASH (exit code 100) ELIMINATED:
+  //   The crash occurred because the backend expanded payload_config
+  //   INLINE inside a bash `run:` block:
+  //     echo '${{ github.event.client_payload.payload_config }}'
+  //   The Actions runner injects the raw JSON value into the shell
+  //   command with ZERO escaping.  Any double-quote, backslash,
+  //   dollar sign, or brace inside the JSON is spliced verbatim into
+  //   the command line, instantly corrupting shell grammar and
+  //   producing invalid JSON that jq cannot parse.
+  //
+  //   The fix is two-part:
+  //   (a) FRONTEND — configBundle is a plain JS object; every value
+  //       is a primitive (string or boolean coerced to string).  A
+  //       single JSON.stringify(configBundle) call produces a clean,
+  //       flat, valid JSON string with no nested serialisation, no
+  //       manual escaping, and no double-stringify risk.
+  //   (b) BACKEND — the raw JSON string is captured via a step-level
+  //       `env: RAW_PAYLOAD_JSON:` mapping.  The runner copies the
+  //       value into an OS environment variable BEFORE bash starts,
+  //       with no shell interpretation.  bash reads $RAW_PAYLOAD_JSON
+  //       as a normal env-var; jq then extracts each field safely
+  //       using `jq -r '.key // default'`.
   // ============================================================
-  const payloadConfig = {
+
+  // configBundle — EXACTLY the 11 mandated keys plus optional extras.
+  // All values are primitives — no nested objects, no undefined,
+  // no circular references — so JSON.stringify always succeeds.
+  const configBundle = {
+    // ---- 11 MANDATED KEYS (backend extracts ALL via jq) ----
+    stream_key:      key,                     // RTMP key (required; validated non-empty above)
+    total_minutes:   String(dur),             // string-cast: avoids JSON number/string mismatch
+    ratio:           S.ratio,                // '9:16' | '16:9'
+    platform:        S.platform,             // 'youtube' | 'facebook'
+    asset_mode:      S.assetMode,            // 'photo_only' | 'video_only' | 'photo_video'
+    drive_mode:      String(S.driveMode),    // 'true' | 'false'
+    photo_filename:  photoFilename,           // repo-root filename; has default, never undefined
+    video_filename:  videoFilename,           // repo-root filename; has default, never undefined
+    photo_drive_url: photoDriveUrl,           // Google Drive URL or empty string ''
+    video_drive_url: videoDriveUrl,           // Google Drive URL or empty string ''
+    ambient_audio:   String(S.ambientAudio),  // 'true' | 'false'
+    // ---- OPTIONAL EXTRAS (backend reads via `jq // empty`) ----
     stream_name:      name,
-    asset_mode:       S.assetMode,           // photo_only | video_only | photo_video
-    drive_mode:       String(S.driveMode),   // "true" | "false"
-    photo_filename:   photoFilename,
-    video_filename:   videoFilename,
-    photo_drive_url:  photoDriveUrl,
-    video_drive_url:  videoDriveUrl,
-    ambient_audio:    String(S.ambientAudio), // "true" | "false"
     backup_rtmp:      backup,
     youtube_video_id: ytVideoId,
     start_at:         startAt,
     stop_at:          stopAt,
   };
 
-  // Only 5 top-level fields leave the browser (well under the 10 cap).
+  // ONE top-level property — zero risk of GitHub API 422.
+  // JSON.stringify(configBundle) is called exactly once on a plain object.
+  // No manual quoting, no nesting, no double-serialisation.
   const payload = {
-    stream_key:     key,
-    total_minutes:  String(dur),
-    ratio:          S.ratio,
-    platform:       S.platform,
-    payload_config: JSON.stringify(payloadConfig),
+    payload_config: JSON.stringify(configBundle),
   };
 
   // ---- Persist full expanded payload to localStorage for auditing ----
-  const formSnap = { ...payload, config: payloadConfig, dispatched_at: new Date().toISOString() };
+  const formSnap = { ...payload, config: configBundle, dispatched_at: new Date().toISOString() };
   localStorage.setItem('sa_last_payload', JSON.stringify(formSnap));
   saveFormToStorage();
 
