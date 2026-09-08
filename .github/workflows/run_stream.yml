@@ -1,21 +1,24 @@
 name: "StreamAdda Ultimate Edition — GitHub Actions Streaming Engine"
 
 # ==============================================================
-#  StreamAdda Ultimate Edition
+#  StreamAdda Ultimate Edition — v9.1 (Engineering Patch)
 #  Production-grade 24/7-style RTMP streaming engine.
 #
-#  Highlights over v9:
+#  Highlights:
 #   - Python-built FFmpeg command (bullet-proof multi-photo slideshow)
 #   - Natural road/street ASMR ambient audio engine (aevalsrc+anoisesrc+amix)
 #   - [SA_TELEMETRY] live pipeline parsing (frame/fps/bitrate/speed/time)
 #   - Zero-drift ISO-8601 scheduled start (absolute-epoch convergence loop)
-#   - Dynamic photo/video split:  photo = total - video  (ffprobe)
+#   - Dynamic photo/video split: photo = total - video (ffprobe)
 #   - Watchdog auto-restart + hard deadline killer
+#   - [SA_FFMPEG_RAW] raw FFmpeg stderr streamed to job log for UI terminal
+#   - Graceful SIGINT -> SIGTERM termination trap (fixes Stop button bug)
+#   - 10-second post-stop YouTube register wait before RTMP teardown
 #
 #  TRIGGERS
-#   1. repository_dispatch  →  fired by the frontend UI
+#   1. repository_dispatch -> fired by the frontend UI
 #      event_type: "start-stream"
-#   2. workflow_dispatch    →  manual run from the Actions tab
+#   2. workflow_dispatch   -> manual run from the Actions tab
 # ==============================================================
 on:
   repository_dispatch:
@@ -411,6 +414,7 @@ jobs:
       # ============================================================
       # STEP 5 — Probe media and compute the timing plan
       #   photo_dur = total_seconds - video_dur   (dynamic split)
+      #   Uses ffprobe for accurate video duration detection.
       # ============================================================
       - name: "[5/8] Probe assets and calculate timing plan"
         id: timing
@@ -425,17 +429,20 @@ jobs:
 
           if [ "$ASSET_MODE" = "photo_video" ] || [ "$ASSET_MODE" = "video_only" ]; then
             echo "[SA] Probing live_video.mp4 with ffprobe..."
-            VIDEO_DUR_RAW=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 live_video.mp4 2>/dev/null)
+            VIDEO_DUR_RAW=$(ffprobe -v error -show_entries format=duration \
+              -of default=noprint_wrappers=1:nokey=1 live_video.mp4 2>/dev/null)
             if [ -z "$VIDEO_DUR_RAW" ] || [ "$VIDEO_DUR_RAW" = "N/A" ]; then
               echo "[SA_STATUS:FAILED:ffprobe failed — live_video.mp4 may be corrupt]"; exit 1
             fi
-            HAS_AUDIO_RAW=$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 live_video.mp4 2>/dev/null)
+            HAS_AUDIO_RAW=$(ffprobe -v error -select_streams a \
+              -show_entries stream=index -of csv=p=0 live_video.mp4 2>/dev/null)
             [ -n "$HAS_AUDIO_RAW" ] && HAS_AUDIO="true" || HAS_AUDIO="false"
             VIDEO_DUR_INT=$(python3 -c "print(int(float('${VIDEO_DUR_RAW}'.strip())))")
             echo "[SA] Video duration: ${VIDEO_DUR_INT}s | has_audio=${HAS_AUDIO}"
           fi
 
           if [ "$ASSET_MODE" = "photo_video" ]; then
+            # KEY FORMULA: Photo Live Duration = Total Target Live Time - Video Duration
             PHOTO_DUR=$(( TOTAL_SECONDS - VIDEO_DUR_INT ))
             if [ "$PHOTO_DUR" -le 10 ]; then
               NEEDED_MIN=$(python3 -c "import math; print(math.ceil((${VIDEO_DUR_INT} + 11) / 60))")
@@ -450,7 +457,7 @@ jobs:
           echo ""
           echo "------------- TIMING PLAN -------------"
           printf "  Mode        : %s\n" "${ASSET_MODE}"
-          printf "  Photo phase : %ss\n" "${PHOTO_DUR}"
+          printf "  Photo phase : %ss  [= Total(%ss) - Video(%ss)]\n" "${PHOTO_DUR}" "${TOTAL_SECONDS}" "${VIDEO_DUR_INT}"
           printf "  Video phase : %ss\n" "${VIDEO_DUR_INT}"
           printf "  Total       : %ss (%sm)\n" "${TOTAL_SECONDS}" "${TOTAL_MINUTES}"
           printf "  Video audio : %s\n" "${HAS_AUDIO}"
@@ -468,14 +475,15 @@ jobs:
       # ============================================================
       # STEP 6 — Zero-drift scheduled start
       #   Absolute-epoch convergence loop eliminates sleep drift.
+      #   Supports local time input with UTC synchronization.
       # ============================================================
-      - name: "[6/8] Handle scheduled start time (zero-drift)"
+      - name: "[6/8] Handle scheduled start time (zero-drift UTC sync)"
         shell: bash
         run: |
           set -uo pipefail
           START_AT="${{ steps.params.outputs.start_at }}"
           if [ -z "$START_AT" ]; then echo "[SA] No schedule — launching immediately."; exit 0; fi
-          echo "[SA] Scheduled start (ISO): ${START_AT}"
+          echo "[SA] Scheduled start (ISO-8601 UTC): ${START_AT}"
 
           TARGET_EPOCH=$(START_AT="$START_AT" python3 - <<'PYEOF'
           import datetime, os, sys
@@ -484,7 +492,9 @@ jobs:
               if not s: print(0); sys.exit(0)
               if s.endswith('Z'): s = s[:-1] + '+00:00'
               t = datetime.datetime.fromisoformat(s)
-              if t.tzinfo is None: t = t.replace(tzinfo=datetime.timezone.utc)
+              if t.tzinfo is None:
+                  # Treat naive timestamps as UTC for zero-drift behaviour
+                  t = t.replace(tzinfo=datetime.timezone.utc)
               print(int(t.timestamp()))
           except Exception as e:
               print(f"[SA][WARN] Could not parse start_at: {e}", file=sys.stderr); print(0)
@@ -504,12 +514,12 @@ jobs:
             REMAIN=$(( TARGET_EPOCH - NOW ))
             [ "$REMAIN" -le 0 ] && break
             H=$(( REMAIN/3600 )); M=$(( (REMAIN%3600)/60 )); S=$(( REMAIN%60 ))
-            printf "[SA] Waiting %02dh %02dm %02ds until scheduled start...\n" "$H" "$M" "$S"
+            printf "[SA] Waiting %02dh %02dm %02ds until scheduled start (UTC zero-drift)...\n" "$H" "$M" "$S"
             if   [ "$REMAIN" -gt 120 ]; then sleep 60
             elif [ "$REMAIN" -gt 10 ];  then sleep 5
             else sleep 1; fi
           done
-          echo "[SA] Scheduled start reached (zero-drift). Proceeding."
+          echo "[SA] Scheduled start reached (zero-drift UTC). Proceeding."
 
 
       # ============================================================
@@ -522,10 +532,18 @@ jobs:
       #
       #  ASMR AMBIENT ENGINE (ambient_audio=true):
       #    engine rumble  : anoisesrc brown -> lowpass  (continuous)
-      #    street air      : anoisesrc pink  -> band-pass hiss
-      #    distant horns   : aevalsrc dual sine gated by a slow LFO
+      #    street air     : anoisesrc pink  -> band-pass hiss
+      #    distant horns  : aevalsrc dual sine gated by a slow LFO
       #    -> amix (3 inputs) -> lowpass polish
       #  Quiet floor (ambient_audio=false): inaudible white noise.
+      #
+      #  RAW OUTPUT: FFmpeg stderr is piped through [SA_FFMPEG_RAW] prefix
+      #  so the full unfiltered console output appears in the job log for
+      #  the UI terminal display (frame/fps/bitrate/q/size/time/speed).
+      #
+      #  SIGINT/SIGTERM TRAP: Receiving a GitHub cancel signal sends
+      #  kill -2 (SIGINT) then kill -15 (SIGTERM) to FFmpeg, enabling
+      #  a clean GOP boundary stop before the RTMP teardown sequence.
       #
       #  TELEMETRY: monitor emits [SA_TELEMETRY] frame/fps/bitrate/speed/time.
       #  HANDSHAKE_OK is emitted only after real packet output is seen.
@@ -561,6 +579,43 @@ jobs:
           ASSET_MODE_UPPER=$(printf '%s' "$ASSET_MODE" | tr '[:lower:]' '[:upper:]')
           [ "$ASSET_MODE" = "video_only" ] && INITIAL_PHASE="VIDEO" || INITIAL_PHASE="PHOTO"
 
+          # Initialise PIDs for trap (referenced before background starts)
+          MONITOR_PID=""
+          KILLER_PID=""
+
+          # ============================================================
+          # SIGINT / SIGTERM GRACEFUL TERMINATION TRAP
+          # Fixes: clicking "Stop" in the UI cancels the GH Actions run,
+          # which sends SIGTERM to the runner shell. This trap then issues
+          # kill -2 (SIGINT) -> kill -15 (SIGTERM) -> kill -9 to FFmpeg,
+          # allowing it to flush the RTMP GOP boundary cleanly.
+          # ============================================================
+          _sa_graceful_stop() {
+            echo ""
+            echo "[SA] *** STOP SIGNAL RECEIVED — Graceful FFmpeg termination sequence ***"
+            touch "$DONE_FILE"
+            if [ -f "$PID_FILE" ]; then
+              local FFPID; FFPID=$(cat "$PID_FILE" 2>/dev/null)
+              if [ -n "$FFPID" ]; then
+                echo "[SA] Phase 1: Sending SIGINT (kill -2) to FFmpeg PID ${FFPID}..."
+                kill -2 "$FFPID" 2>/dev/null || true
+                sleep 3
+                echo "[SA] Phase 2: Sending SIGTERM (kill -15) to FFmpeg PID ${FFPID}..."
+                kill -15 "$FFPID" 2>/dev/null || true
+                sleep 2
+                echo "[SA] Phase 3: SIGKILL cleanup for PID ${FFPID}..."
+                kill -9 "$FFPID" 2>/dev/null || true
+              fi
+            fi
+            [ -n "$MONITOR_PID" ] && { kill "$MONITOR_PID" 2>/dev/null; wait "$MONITOR_PID" 2>/dev/null || true; }
+            [ -n "$KILLER_PID" ] && { kill "$KILLER_PID" 2>/dev/null; wait "$KILLER_PID" 2>/dev/null || true; }
+            echo "[SA_STATUS:COMPLETE]"
+            echo "[SA] FFmpeg stopped cleanly. RTMP teardown will follow in Step 8."
+            echo "ffmpeg_exit_code=130" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          trap '_sa_graceful_stop' SIGINT SIGTERM HUP
+
           # ---------- Write the Python FFmpeg command builder ----------
           cat > /tmp/build_ffmpeg.py <<'PYEOF'
           import json, os, sys
@@ -581,6 +636,7 @@ jobs:
 
           QUIET = "anoisesrc=r=44100:amplitude=0.001:color=white"
           # Natural road/street ASMR bed: engine rumble + street air + gated distant horns.
+          # Uses aevalsrc (sine LFO gated horns) + anoisesrc (brown rumble + pink air) + amix
           ASMR = (
               "anoisesrc=r=44100:c=brown:a=0.30,lowpass=f=150,volume=1.6[eng];"
               "anoisesrc=r=44100:c=pink:a=0.05,highpass=f=700,lowpass=f=5200,volume=0.5[air];"
@@ -692,6 +748,11 @@ jobs:
 
           export WIDTH HEIGHT ASSET_MODE AMBIENT_AUDIO HAS_AUDIO PHOTO_LIST PHOTO_DUR VIDEO_DUR_INT TOTAL_SECONDS RTMP_URL
 
+          # ============================================================
+          # run_ffmpeg(): build args, create named pipe, stream raw stderr
+          # to stdout as [SA_FFMPEG_RAW] lines (visible in job log for UI),
+          # also write to FFMPEG_LOG for monitor_stream parsing.
+          # ============================================================
           run_ffmpeg() {
             local FILL_FLAG="$1"
             local ARGS_JSON
@@ -700,8 +761,30 @@ jobs:
               echo "[SA_STATUS:FAILED:FFmpeg command builder failed]"; cat /tmp/build_err.log >&2; touch "$FAIL_FILE"; return 1
             fi
             mapfile -t FF_ARGS < <(printf '%s' "$ARGS_JSON" | jq -r '.[]')
-            ffmpeg "${FF_ARGS[@]}" >>"$FFMPEG_LOG" 2>&1 &
-            local P=$!; echo "$P" > "$PID_FILE"; wait "$P"; return $?
+
+            # --- Named pipe: raw FFmpeg stderr -> [SA_FFMPEG_RAW] in job log ---
+            local FFPIPE; FFPIPE=$(mktemp -u /tmp/ffpipe_XXXXXX)
+            mkfifo "$FFPIPE"
+
+            # Background reader: writes raw lines to FFMPEG_LOG AND emits
+            # [SA_FFMPEG_RAW] prefix so the UI terminal can display them.
+            while IFS= read -r rawline || [ -n "$rawline" ]; do
+              printf '%s\n' "$rawline" >> "$FFMPEG_LOG"
+              printf '[SA_FFMPEG_RAW] %s\n' "$rawline"
+            done < "$FFPIPE" &
+            local READER_PID=$!
+
+            # Start FFmpeg — stderr to named pipe (raw output flows to reader)
+            ffmpeg "${FF_ARGS[@]}" 2>"$FFPIPE" &
+            local P=$!; echo "$P" > "$PID_FILE"
+            wait "$P"; local EXIT=$?
+
+            # Unblock the reader if FFmpeg closed the write end
+            exec 3>"$FFPIPE" 3>&- 2>/dev/null || true
+            wait "$READER_PID" 2>/dev/null || true
+            rm -f "$FFPIPE"
+
+            return $EXIT
           }
 
           # ---- Duration model (stop_at wins if earlier) ----
@@ -783,11 +866,11 @@ jobs:
                 local LINE FR FPS BR SPD TM TELE
                 LINE=$(tr '\r' '\n' < "$FFMPEG_LOG" | grep -E 'frame=' | tail -1)
                 if [ -n "$LINE" ]; then
-                  FR=$(echo "$LINE"  | grep -oE 'frame=[[:space:]]*[0-9]+'        | grep -oE '[0-9]+' | tail -1)
-                  FPS=$(echo "$LINE" | grep -oE 'fps=[[:space:]]*[0-9.]+'         | grep -oE '[0-9.]+' | tail -1)
+                  FR=$(echo "$LINE"  | grep -oE 'frame=[[:space:]]*[0-9]+'           | grep -oE '[0-9]+'        | tail -1)
+                  FPS=$(echo "$LINE" | grep -oE 'fps=[[:space:]]*[0-9.]+'            | grep -oE '[0-9.]+'       | tail -1)
                   BR=$(echo "$LINE"  | grep -oE 'bitrate=[[:space:]]*[0-9.]+kbits/s' | grep -oE '[0-9.]+kbits/s' | tail -1)
-                  SPD=$(echo "$LINE" | grep -oE 'speed=[[:space:]]*[0-9.]+x'      | grep -oE '[0-9.]+x' | tail -1)
-                  TM=$(echo "$LINE"  | grep -oE 'time=[0-9:.]+'                   | grep -oE '[0-9:.]+' | tail -1)
+                  SPD=$(echo "$LINE" | grep -oE 'speed=[[:space:]]*[0-9.]+x'         | grep -oE '[0-9.]+x'      | tail -1)
+                  TM=$(echo "$LINE"  | grep -oE 'time=[0-9:.]+' | grep -oE '[0-9:.]+' | tail -1)
                   TELE="[SA_TELEMETRY] frame=${FR:-0} fps=${FPS:-0} bitrate=${BR:-0kbits/s} speed=${SPD:-0x} time=${TM:-00:00:00}"
                   if [ "$TELE" != "$LAST_TELEM" ]; then echo "$TELE"; LAST_TELEM="$TELE"; fi
                 fi
@@ -836,6 +919,11 @@ jobs:
 
       # ============================================================
       # STEP 8 — Clean RTMP teardown (force platform offline)
+      #
+      # BUG-FIX: waits exactly 10 seconds after FFmpeg stop to ensure
+      # YouTube/Facebook registers the stream cutoff before sending the
+      # black-frame end-of-stream RTMP signal. The UI Dismiss button
+      # will be shown during this window.
       # ============================================================
       - name: "[8/8] Send RTMP end-of-stream signal"
         if: always()
@@ -845,7 +933,9 @@ jobs:
           RTMP_BASE="${{ steps.params.outputs.rtmp_base }}"
           WIDTH="${{ steps.params.outputs.width }}"
           HEIGHT="${{ steps.params.outputs.height }}"
-          echo "[SA] Sending RTMP end-of-stream signal (3s black) to ${RTMP_BASE}****"
+          echo "[SA] *** 10-second YouTube registration window — waiting for platform to register stream cutoff ***"
+          sleep 10
+          echo "[SA] Proceeding with RTMP end-of-stream black-frame signal to ${RTMP_BASE}****"
           timeout --kill-after=15s 20s \
             ffmpeg -hide_banner -y \
               -f lavfi -i "color=c=black:s=${WIDTH}x${HEIGHT}:r=30:d=3" \
@@ -857,7 +947,7 @@ jobs:
               -f flv -flvflags no_duration_filesize \
               -reconnect 1 -reconnect_at_eof 1 -reconnect_streamed 1 -reconnect_delay_max 5 \
               "${RTMP_URL}" \
-            && echo "[SA] End-of-stream signal delivered." \
+            && echo "[SA] End-of-stream signal delivered — broadcast status will show Ended." \
             || echo "WARN [SA] End signal timed out (platform self-timeout ~30s)."
           echo ""
           echo "=================================================="
