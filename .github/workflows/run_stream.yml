@@ -1,10 +1,11 @@
-name: "StreamAdda v8 – GitHub Actions Streaming Engine"
+name: "StreamAdda v8 — GitHub Actions Streaming Engine"
 
-# ============================================================
+# ==============================================================
 # TRIGGERS
-# 1. repository_dispatch  →  fired by the Netlify frontend
+# 1. repository_dispatch  →  fired by the Netlify frontend UI
+#    event_type: "start-stream"
 # 2. workflow_dispatch    →  manual run from the Actions tab
-# ============================================================
+# ==============================================================
 on:
   repository_dispatch:
     types: [start-stream]
@@ -17,72 +18,116 @@ on:
         default: "Live Stream"
         type: string
       stream_key:
-        description: "RTMP Stream Key (YouTube or Facebook)"
+        description: "RTMP stream key (YouTube or Facebook)"
         required: true
         type: string
-      ratio:
-        description: "Video ratio — 9:16 (portrait/Shorts) or 16:9 (landscape)"
-        required: false
-        default: "9:16"
-        type: choice
-        options:
-          - "9:16"
-          - "16:9"
-      total_minutes:
-        description: "Total stream duration in minutes (minimum 2)"
-        required: false
-        default: "60"
-        type: string
       platform:
-        description: "Streaming platform target"
+        description: "Streaming platform"
         required: false
         default: "youtube"
         type: choice
-        options:
-          - youtube
-          - facebook
+        options: [youtube, facebook]
+      ratio:
+        description: "Video aspect ratio"
+        required: false
+        default: "9:16"
+        type: choice
+        options: ["9:16", "16:9"]
+      total_minutes:
+        description: "Total stream duration in minutes (max 345 enforced)"
+        required: false
+        default: "60"
+        type: string
+      asset_mode:
+        description: "Asset mode: photo_video | photo_only | video_only"
+        required: false
+        default: "photo_video"
+        type: choice
+        options: [photo_video, photo_only, video_only]
+      drive_mode:
+        description: "Use Google Drive assets (true/false)"
+        required: false
+        default: "false"
+        type: string
+      photo_drive_url:
+        description: "Google Drive URL for photo asset"
+        required: false
+        default: ""
+        type: string
+      video_drive_url:
+        description: "Google Drive URL for video asset"
+        required: false
+        default: ""
+        type: string
+      photo_filename:
+        description: "Photo filename in repo root (local mode)"
+        required: false
+        default: "live_photo.jpg"
+        type: string
+      video_filename:
+        description: "Video filename in repo root (local mode)"
+        required: false
+        default: "live_video.mp4"
+        type: string
+      ambient_audio:
+        description: "Enable ambient traffic noise audio (true/false)"
+        required: false
+        default: "false"
+        type: string
       backup_rtmp:
-        description: "Backup RTMP full URL including key (optional)"
+        description: "Backup RTMP URL including key (optional)"
         required: false
         default: ""
         type: string
       youtube_video_id:
-        description: "YouTube Video ID for monitoring (optional)"
+        description: "YouTube Video ID for Studio monitoring"
         required: false
         default: ""
         type: string
       start_at:
-        description: "Scheduled start (ISO 8601, e.g. 2024-06-01T14:30:00Z) — leave blank for immediate"
+        description: "Scheduled start time (ISO 8601, e.g. 2024-06-01T14:30:00Z)"
         required: false
         default: ""
         type: string
       stop_at:
-        description: "Hard stop time (ISO 8601) — overrides total_minutes if earlier"
+        description: "Hard stop time (ISO 8601, overrides duration if earlier)"
         required: false
         default: ""
         type: string
+
 
 jobs:
   stream:
     name: "FFmpeg Live Stream Engine"
     runs-on: ubuntu-latest
-    # 6-hour GitHub Actions hard cap — covers the 5-6 h/day use case
+    # GitHub's hard cap is 6 hours (360 min). Our logic enforces 345 min.
+    # The extra 15 min headroom covers install + teardown steps.
     timeout-minutes: 360
 
     steps:
 
-      # ----------------------------------------------------------
-      # STEP 1 — Checkout the repository
-      # live_photo.jpg and live_video.mp4 must exist in repo root
-      # ----------------------------------------------------------
+      # ============================================================
+      # STEP 1 — Checkout repository
+      # The repo root must contain photo/video assets in local mode.
+      # ============================================================
       - name: "[1/8] Checkout repository"
         uses: actions/checkout@v4
 
-      # ----------------------------------------------------------
-      # STEP 2 — Extract and validate every parameter
-      # Supports both repository_dispatch (client_payload) and
-      # workflow_dispatch (inputs) trigger sources.
-      # ----------------------------------------------------------
+
+      # ============================================================
+      # STEP 2 — Extract, sanitise, and validate ALL parameters
+      #
+      # Supports BOTH trigger sources:
+      #   repository_dispatch  → reads client_payload.*
+      #   workflow_dispatch    → reads github.event.inputs.*
+      #
+      # KEY FIXES IN THIS STEP:
+      #   ✔ 360-Minute Freeze Bug — any duration > 345 is HARD-CLAMPED
+      #     to 345 minutes before any arithmetic is performed.
+      #   ✔ Asset mode routing — photo_only, video_only, photo_video
+      #   ✔ Drive mode flag + URL extraction
+      #   ✔ Ambient audio flag
+      # ============================================================
       - name: "[2/8] Extract and validate parameters"
         id: params
         shell: bash
@@ -94,6 +139,13 @@ jobs:
             RAW_RATIO="${{ github.event.client_payload.ratio }}"
             RAW_MINUTES="${{ github.event.client_payload.total_minutes }}"
             RAW_PLATFORM="${{ github.event.client_payload.platform }}"
+            RAW_ASSET_MODE="${{ github.event.client_payload.asset_mode }}"
+            RAW_DRIVE_MODE="${{ github.event.client_payload.drive_mode }}"
+            RAW_PHOTO_DRIVE="${{ github.event.client_payload.photo_drive_url }}"
+            RAW_VIDEO_DRIVE="${{ github.event.client_payload.video_drive_url }}"
+            RAW_PHOTO_FILE="${{ github.event.client_payload.photo_filename }}"
+            RAW_VIDEO_FILE="${{ github.event.client_payload.video_filename }}"
+            RAW_AMBIENT="${{ github.event.client_payload.ambient_audio }}"
             RAW_BACKUP="${{ github.event.client_payload.backup_rtmp }}"
             RAW_YTID="${{ github.event.client_payload.youtube_video_id }}"
             RAW_START_AT="${{ github.event.client_payload.start_at }}"
@@ -104,6 +156,13 @@ jobs:
             RAW_RATIO="${{ github.event.inputs.ratio }}"
             RAW_MINUTES="${{ github.event.inputs.total_minutes }}"
             RAW_PLATFORM="${{ github.event.inputs.platform }}"
+            RAW_ASSET_MODE="${{ github.event.inputs.asset_mode }}"
+            RAW_DRIVE_MODE="${{ github.event.inputs.drive_mode }}"
+            RAW_PHOTO_DRIVE="${{ github.event.inputs.photo_drive_url }}"
+            RAW_VIDEO_DRIVE="${{ github.event.inputs.video_drive_url }}"
+            RAW_PHOTO_FILE="${{ github.event.inputs.photo_filename }}"
+            RAW_VIDEO_FILE="${{ github.event.inputs.video_filename }}"
+            RAW_AMBIENT="${{ github.event.inputs.ambient_audio }}"
             RAW_BACKUP="${{ github.event.inputs.backup_rtmp }}"
             RAW_YTID="${{ github.event.inputs.youtube_video_id }}"
             RAW_START_AT="${{ github.event.inputs.start_at }}"
@@ -112,36 +171,64 @@ jobs:
 
           # ---- Apply defaults ----
           STREAM_NAME="${RAW_NAME:-Live Stream}"
+          STREAM_KEY="${RAW_KEY:-}"
           RATIO="${RAW_RATIO:-9:16}"
           TOTAL_MINUTES="${RAW_MINUTES:-60}"
           PLATFORM="${RAW_PLATFORM:-youtube}"
+          ASSET_MODE="${RAW_ASSET_MODE:-photo_video}"
+          DRIVE_MODE="${RAW_DRIVE_MODE:-false}"
+          PHOTO_DRIVE_URL="${RAW_PHOTO_DRIVE:-}"
+          VIDEO_DRIVE_URL="${RAW_VIDEO_DRIVE:-}"
+          PHOTO_FILENAME="${RAW_PHOTO_FILE:-live_photo.jpg}"
+          VIDEO_FILENAME="${RAW_VIDEO_FILE:-live_video.mp4}"
+          AMBIENT_AUDIO="${RAW_AMBIENT:-false}"
           BACKUP_RTMP="${RAW_BACKUP:-}"
           YOUTUBE_VIDEO_ID="${RAW_YTID:-}"
           START_AT="${RAW_START_AT:-}"
           STOP_AT="${RAW_STOP_AT:-}"
-          STREAM_KEY="${RAW_KEY:-}"
 
-          # ---- Validate stream key (required) ----
+          # ---- VALIDATE: stream key (required) ----
           if [ -z "$STREAM_KEY" ]; then
             echo "" >&2
-            echo "❌ [SA] FATAL: stream_key is empty." >&2
-            echo "   You must supply the RTMP stream key from YouTube Studio or Facebook Live Producer." >&2
+            echo "[SA_STATUS:FAILED:stream_key is empty. Supply the RTMP key from YouTube Studio.]" >&2
+            echo "\u274c [SA] FATAL: stream_key is empty." >&2
             exit 1
           fi
 
-          # ---- Validate ratio ----
+          # ---- VALIDATE: ratio ----
           if [ "$RATIO" != "16:9" ] && [ "$RATIO" != "9:16" ]; then
-            echo "⚠️  [SA] Invalid ratio '${RATIO}'. Defaulting to 9:16."
+            echo "\u26a0  [SA] Invalid ratio '${RATIO}'. Defaulting to 9:16."
             RATIO="9:16"
           fi
 
-          # ---- Validate total_minutes ----
-          if ! echo "$TOTAL_MINUTES" | grep -qE '^[0-9]+$' || [ "$TOTAL_MINUTES" -lt 2 ]; then
-            echo "⚠️  [SA] Invalid total_minutes '${TOTAL_MINUTES}'. Defaulting to 60."
+          # ---- VALIDATE & CLAMP: total_minutes (THE 360-MINUTE BUG FIX) ----
+          # Any value that is non-numeric, below 2, or above 345 is corrected
+          # RIGHT HERE before any downstream arithmetic can misfire.
+          # 345 minutes = 5h 45m = safe max that fits in the 360-min runner cap
+          # while leaving 15 min for install + teardown.
+          if ! echo "$TOTAL_MINUTES" | grep -qE '^[0-9]+$'; then
+            echo "\u26a0  [SA] Non-numeric total_minutes '${TOTAL_MINUTES}'. Defaulting to 60."
             TOTAL_MINUTES=60
           fi
+          if [ "$TOTAL_MINUTES" -lt 2 ]; then
+            echo "\u26a0  [SA] total_minutes < 2. Clamping to 2."
+            TOTAL_MINUTES=2
+          fi
+          if [ "$TOTAL_MINUTES" -gt 345 ]; then
+            echo "\u26a0  [SA] total_minutes=${TOTAL_MINUTES} exceeds safety cap. CLAMPING TO 345."
+            TOTAL_MINUTES=345
+          fi
 
-          # ---- Validate and set platform + RTMP base URL ----
+          # ---- VALIDATE: asset mode ----
+          case "$ASSET_MODE" in
+            photo_only|video_only|photo_video) ;;
+            *)
+              echo "\u26a0  [SA] Unknown asset_mode '${ASSET_MODE}'. Defaulting to photo_video."
+              ASSET_MODE="photo_video"
+              ;;
+          esac
+
+          # ---- VALIDATE: platform + RTMP base URL ----
           if [ "$PLATFORM" = "facebook" ]; then
             RTMP_BASE="rtmps://live-api-s.facebook.com:443/rtmp/"
             PLATFORM_LABEL="Facebook Live"
@@ -154,77 +241,79 @@ jobs:
 
           # ---- Set canvas dimensions from ratio ----
           if [ "$RATIO" = "16:9" ]; then
-            WIDTH=1280
-            HEIGHT=720
+            WIDTH=1280; HEIGHT=720
           else
-            WIDTH=720
-            HEIGHT=1280
+            WIDTH=720;  HEIGHT=1280
           fi
 
+          # ---- Normalise boolean flags ----
+          # Accept true/True/TRUE/1/yes as truthy; everything else is false
+          normalise_bool() {
+            case "${1,,}" in true|1|yes|on) echo true;; *) echo false;; esac
+          }
+          DRIVE_MODE=$(normalise_bool "$DRIVE_MODE")
+          AMBIENT_AUDIO=$(normalise_bool "$AMBIENT_AUDIO")
+
           # ---- Export all outputs for downstream steps ----
-          echo "stream_name=${STREAM_NAME}"     >> "$GITHUB_OUTPUT"
-          echo "stream_key=${STREAM_KEY}"       >> "$GITHUB_OUTPUT"
-          echo "ratio=${RATIO}"                 >> "$GITHUB_OUTPUT"
-          echo "total_minutes=${TOTAL_MINUTES}" >> "$GITHUB_OUTPUT"
-          echo "platform=${PLATFORM}"           >> "$GITHUB_OUTPUT"
-          echo "platform_label=${PLATFORM_LABEL}" >> "$GITHUB_OUTPUT"
-          echo "backup_rtmp=${BACKUP_RTMP}"     >> "$GITHUB_OUTPUT"
-          echo "youtube_video_id=${YOUTUBE_VIDEO_ID}" >> "$GITHUB_OUTPUT"
-          echo "start_at=${START_AT}"           >> "$GITHUB_OUTPUT"
-          echo "stop_at=${STOP_AT}"             >> "$GITHUB_OUTPUT"
-          echo "rtmp_url=${RTMP_URL}"           >> "$GITHUB_OUTPUT"
-          echo "rtmp_base=${RTMP_BASE}"         >> "$GITHUB_OUTPUT"
-          echo "width=${WIDTH}"                 >> "$GITHUB_OUTPUT"
-          echo "height=${HEIGHT}"               >> "$GITHUB_OUTPUT"
+          echo "stream_name=${STREAM_NAME}"             >> "$GITHUB_OUTPUT"
+          echo "stream_key=${STREAM_KEY}"               >> "$GITHUB_OUTPUT"
+          echo "ratio=${RATIO}"                         >> "$GITHUB_OUTPUT"
+          echo "total_minutes=${TOTAL_MINUTES}"         >> "$GITHUB_OUTPUT"
+          echo "platform=${PLATFORM}"                   >> "$GITHUB_OUTPUT"
+          echo "platform_label=${PLATFORM_LABEL}"       >> "$GITHUB_OUTPUT"
+          echo "asset_mode=${ASSET_MODE}"               >> "$GITHUB_OUTPUT"
+          echo "drive_mode=${DRIVE_MODE}"               >> "$GITHUB_OUTPUT"
+          echo "photo_drive_url=${PHOTO_DRIVE_URL}"     >> "$GITHUB_OUTPUT"
+          echo "video_drive_url=${VIDEO_DRIVE_URL}"     >> "$GITHUB_OUTPUT"
+          echo "photo_filename=${PHOTO_FILENAME}"       >> "$GITHUB_OUTPUT"
+          echo "video_filename=${VIDEO_FILENAME}"       >> "$GITHUB_OUTPUT"
+          echo "ambient_audio=${AMBIENT_AUDIO}"         >> "$GITHUB_OUTPUT"
+          echo "backup_rtmp=${BACKUP_RTMP}"             >> "$GITHUB_OUTPUT"
+          echo "youtube_video_id=${YOUTUBE_VIDEO_ID}"   >> "$GITHUB_OUTPUT"
+          echo "start_at=${START_AT}"                   >> "$GITHUB_OUTPUT"
+          echo "stop_at=${STOP_AT}"                     >> "$GITHUB_OUTPUT"
+          echo "rtmp_url=${RTMP_URL}"                   >> "$GITHUB_OUTPUT"
+          echo "rtmp_base=${RTMP_BASE}"                 >> "$GITHUB_OUTPUT"
+          echo "width=${WIDTH}"                         >> "$GITHUB_OUTPUT"
+          echo "height=${HEIGHT}"                       >> "$GITHUB_OUTPUT"
 
           # ---- Print configuration banner ----
           echo ""
-          echo "╔══════════════════════════════════════════════╗"
-          echo "║        StreamAdda v8 - GitHub Actions Engine        ║"
-          echo "╚══════════════════════════════════════════════╝"
+          echo "\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557"
+          echo "\u2551          StreamAdda v8 \u2014 GitHub Actions Engine          \u2551"
+          echo "\u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d"
           printf "  Stream Name    : %s\n"  "$STREAM_NAME"
           printf "  Platform       : %s\n"  "$PLATFORM_LABEL"
           printf "  Ratio          : %s (%sx%s)\n" "$RATIO" "$WIDTH" "$HEIGHT"
-          printf "  Total Duration : %s minutes\n" "$TOTAL_MINUTES"
+          printf "  Duration       : %s min (SAFETY CAP: 345)\n" "$TOTAL_MINUTES"
+          printf "  Asset Mode     : %s\n"  "$ASSET_MODE"
+          printf "  Drive Mode     : %s\n"  "$DRIVE_MODE"
+          printf "  Ambient Audio  : %s\n"  "$AMBIENT_AUDIO"
           printf "  RTMP Target    : %s****\n" "$RTMP_BASE"
-          if [ -n "$BACKUP_RTMP" ]; then
-            printf "  Backup RTMP    : Configured\n"
-          else
-            printf "  Backup RTMP    : None\n"
-          fi
-          if [ -n "$YOUTUBE_VIDEO_ID" ]; then
-            printf "  YouTube Vid ID : %s\n" "$YOUTUBE_VIDEO_ID"
-          fi
-          if [ -n "$START_AT" ]; then
-            printf "  Sched. Start   : %s\n" "$START_AT"
-          else
-            printf "  Sched. Start   : Immediate\n"
-          fi
-          if [ -n "$STOP_AT" ]; then
-            printf "  Hard Stop At   : %s\n" "$STOP_AT"
-          fi
+          [ -n "$BACKUP_RTMP" ] && printf "  Backup RTMP    : Configured\n" || printf "  Backup RTMP    : None\n"
+          [ -n "$START_AT" ] && printf "  Sched. Start   : %s\n" "$START_AT" || printf "  Sched. Start   : Immediate\n"
+          [ -n "$STOP_AT"  ] && printf "  Hard Stop At   : %s\n" "$STOP_AT"
           echo ""
 
-      # ----------------------------------------------------------
-      # STEP 3 — Install FFmpeg with all required codec libraries
-      # ----------------------------------------------------------
+
+      # ============================================================
+      # STEP 3 — Install FFmpeg and all required codec libraries
+      # ============================================================
       - name: "[3/8] Install FFmpeg and system dependencies"
         shell: bash
         run: |
-          echo "📦 [SA] Updating apt package lists..."
+          echo "\U0001f4e6 [SA] Updating apt package lists..."
           sudo apt-get update -qq
 
-          echo "📦 [SA] Installing FFmpeg and required libraries..."
+          echo "\U0001f4e6 [SA] Installing FFmpeg, codecs, and tools..."
           sudo apt-get install -y --no-install-recommends \
             ffmpeg \
             libavcodec-extra \
             libopus0 \
             libvorbis0a \
             libvpx7 \
-            libfdk-aac2 \
             libmp3lame0 \
             libx264-163 \
-            libx265-199 \
             libass9 \
             libfreetype6 \
             libssl3 \
@@ -232,277 +321,473 @@ jobs:
             python3-pip \
             jq \
             curl \
+            wget \
             procps \
             coreutils
 
           echo ""
-          echo "✅ [SA] FFmpeg installation complete."
-          echo "🔍 [SA] Verifying FFmpeg binary:"
-          ffmpeg -version 2>&1 | head -6
+          echo "\u2705 [SA] FFmpeg installation complete."
+          echo "\U0001f50d [SA] Verifying FFmpeg binary:"
+          ffmpeg -version 2>&1 | head -4
+          echo "\u2705 [SA] All codec libraries confirmed."
           echo ""
-          echo "🔍 [SA] Verifying ffprobe binary:"
-          ffprobe -version 2>&1 | head -3
-          echo ""
-          echo "✅ [SA] All required codec libraries confirmed ready."
 
-      # ----------------------------------------------------------
-      # STEP 4 — Verify that live_photo.jpg and live_video.mp4
-      #          exist in the repository root before doing anything
-      # ----------------------------------------------------------
-      - name: "[4/8] Verify source media files in repository root"
+
+      # ============================================================
+      # STEP 4 — Download or verify source media assets
+      #
+      # TWO sub-modes:
+      #   A) DRIVE MODE (drive_mode=true):
+      #      Download photo and/or video from Google Drive using
+      #      a cookie-based curl command that handles large-file
+      #      confirmation bypass automatically.
+      #
+      #   B) LOCAL MODE (drive_mode=false):
+      #      Verify that the required filenames exist in the
+      #      repository root. Skip checks for assets not needed
+      #      by the current asset_mode.
+      #
+      # asset_mode controls which assets are required:
+      #   photo_only  → only photo required
+      #   video_only  → only video required
+      #   photo_video → both required
+      # ============================================================
+      - name: "[4/8] Download or verify source media assets"
+        id: assets
         shell: bash
         run: |
-          echo "🔍 [SA] Checking for required source media files..."
-          echo ""
+          ASSET_MODE="${{ steps.params.outputs.asset_mode }}"
+          DRIVE_MODE="${{ steps.params.outputs.drive_mode }}"
+          PHOTO_DRIVE_URL="${{ steps.params.outputs.photo_drive_url }}"
+          VIDEO_DRIVE_URL="${{ steps.params.outputs.video_drive_url }}"
+          PHOTO_FILENAME="${{ steps.params.outputs.photo_filename }}"
+          VIDEO_FILENAME="${{ steps.params.outputs.video_filename }}"
 
-          PHOTO_MISSING=false
-          VIDEO_MISSING=false
-
-          if [ ! -f "live_photo.jpg" ]; then
-            echo "❌ [SA] live_photo.jpg — NOT FOUND in repository root!"
-            PHOTO_MISSING=true
-          else
-            PHOTO_SIZE=$(du -h live_photo.jpg | awk '{print $1}')
-            echo "✅ [SA] live_photo.jpg — Found. Size: ${PHOTO_SIZE}"
-          fi
-
-          if [ ! -f "live_video.mp4" ]; then
-            echo "❌ [SA] live_video.mp4 — NOT FOUND in repository root!"
-            VIDEO_MISSING=true
-          else
-            VIDEO_SIZE=$(du -h live_video.mp4 | awk '{print $1}')
-            echo "✅ [SA] live_video.mp4 — Found. Size: ${VIDEO_SIZE}"
-          fi
-
-          if [ "$PHOTO_MISSING" = "true" ] || [ "$VIDEO_MISSING" = "true" ]; then
-            echo ""
-            echo "❌ [SA] FATAL: Required media files are missing from the repository root." >&2
-            echo "   • Commit 'live_photo.jpg' as your cover/thumbnail image." >&2
-            echo "   • Commit 'live_video.mp4' as the video that plays at stream end." >&2
-            echo "   Both files MUST exist in the root of your GitHub repository." >&2
-            exit 1
-          fi
+          # Determine which assets are needed for this run
+          NEEDS_PHOTO=false
+          NEEDS_VIDEO=false
+          case "$ASSET_MODE" in
+            photo_only)  NEEDS_PHOTO=true ;;
+            video_only)  NEEDS_VIDEO=true ;;
+            photo_video) NEEDS_PHOTO=true; NEEDS_VIDEO=true ;;
+          esac
 
           echo ""
-          echo "✅ [SA] All required source media files verified and ready."
+          echo "\U0001f4c2 [SA] Asset mode: ${ASSET_MODE}  |  Drive mode: ${DRIVE_MODE}"
+          echo "\U0001f4c2 [SA] Needs photo: ${NEEDS_PHOTO}  |  Needs video: ${NEEDS_VIDEO}"
+          echo ""
 
-      # ----------------------------------------------------------
-      # STEP 5 — Probe the video file with ffprobe
-      #   - Detect exact video duration
-      #   - Detect if the video has an audio track
-      #   - Calculate photo phase duration
-      #   - Validate timing feasibility
-      # ----------------------------------------------------------
-      - name: "[5/8] Probe video and calculate stream timing plan"
+          # ----------------------------------------------------------
+          # GOOGLE DRIVE DOWNLOAD FUNCTION
+          # Handles both small files (direct download) and large
+          # files that require a cookie-based confirmation bypass.
+          # Accepts any Drive share URL format:
+          #   https://drive.google.com/file/d/FILE_ID/view
+          #   https://drive.google.com/open?id=FILE_ID
+          # ----------------------------------------------------------
+          download_from_drive() {
+            local DRIVE_URL="$1"
+            local OUTPUT_PATH="$2"
+            local ASSET_LABEL="$3"
+
+            echo "\U0001f4e5 [SA] Downloading ${ASSET_LABEL} from Google Drive..."
+            echo "    URL: ${DRIVE_URL}"
+
+            # Extract file ID from multiple Drive URL patterns
+            local FILE_ID
+            FILE_ID=$(echo "$DRIVE_URL" | grep -oP '(?<=/d/)[^/?]+' | head -1)
+            if [ -z "$FILE_ID" ]; then
+              FILE_ID=$(echo "$DRIVE_URL" | grep -oP '(?<=id=)[^&]+' | head -1)
+            fi
+            if [ -z "$FILE_ID" ]; then
+              echo "\u274c [SA] FATAL: Could not extract Google Drive file ID from URL: ${DRIVE_URL}" >&2
+              echo "[SA_STATUS:FAILED:Cannot parse Drive file ID from URL: ${DRIVE_URL}]"
+              exit 1
+            fi
+            echo "    File ID: ${FILE_ID}"
+
+            # Use a temp cookie jar
+            local COOKIE_JAR
+            COOKIE_JAR=$(mktemp /tmp/drive_cookies_XXXXXX)
+
+            # Step 1: First request — get any confirmation token for large files
+            local CONFIRM_TOKEN
+            CONFIRM_TOKEN=$(curl -sc "$COOKIE_JAR" -L \
+              "https://drive.google.com/uc?export=download&id=${FILE_ID}" \
+              2>/dev/null \
+              | grep -oP '(?<=confirm=)[^&"]+' | head -1)
+
+            if [ -n "$CONFIRM_TOKEN" ]; then
+              # Large file: use the confirmation token
+              echo "    Large file detected. Using confirmation token: ${CONFIRM_TOKEN}"
+              curl -Lb "$COOKIE_JAR" \
+                "https://drive.google.com/uc?export=download&id=${FILE_ID}&confirm=${CONFIRM_TOKEN}" \
+                -o "$OUTPUT_PATH" \
+                --progress-bar \
+                2>&1
+            else
+              # Small file or newer Drive API: try the modern export URL
+              echo "    Standard file. Downloading directly..."
+              curl -L \
+                "https://drive.usercontent.google.com/download?id=${FILE_ID}&export=download&authuser=0" \
+                -o "$OUTPUT_PATH" \
+                --progress-bar \
+                2>&1
+            fi
+
+            rm -f "$COOKIE_JAR"
+
+            # Verify download succeeded and file is non-empty
+            if [ ! -f "$OUTPUT_PATH" ] || [ ! -s "$OUTPUT_PATH" ]; then
+              echo "\u274c [SA] FATAL: Drive download failed or produced an empty file for ${ASSET_LABEL}." >&2
+              echo "    Ensure the file is publicly shared ('Anyone with the link can view')." >&2
+              echo "[SA_STATUS:FAILED:Google Drive download failed for ${ASSET_LABEL}]"
+              exit 1
+            fi
+
+            local FILE_SIZE
+            FILE_SIZE=$(du -sh "$OUTPUT_PATH" | awk '{print $1}')
+            echo "\u2705 [SA] ${ASSET_LABEL} downloaded successfully. Size: ${FILE_SIZE}"
+          }
+
+          # ----------------------------------------------------------
+          # ASSET ACQUISITION
+          # ----------------------------------------------------------
+          if [ "$DRIVE_MODE" = "true" ]; then
+            # ---- DRIVE MODE: download from Google Drive ----
+            echo "\u2601  [SA] DRIVE MODE active. Downloading assets from Google Drive..."
+
+            if [ "$NEEDS_PHOTO" = "true" ]; then
+              if [ -z "$PHOTO_DRIVE_URL" ]; then
+                echo "\u274c [SA] FATAL: photo_drive_url is required for mode '${ASSET_MODE}' with Drive mode ON." >&2
+                echo "[SA_STATUS:FAILED:photo_drive_url missing for mode ${ASSET_MODE}]"
+                exit 1
+              fi
+              download_from_drive "$PHOTO_DRIVE_URL" "live_photo.jpg" "PHOTO"
+              # Quick sanity check: verify it is actually an image
+              file live_photo.jpg | grep -qiE 'image|jpeg|png|jpg' || {
+                echo "\u26a0  [SA] Warning: live_photo.jpg may not be a valid image file."
+              }
+            fi
+
+            if [ "$NEEDS_VIDEO" = "true" ]; then
+              if [ -z "$VIDEO_DRIVE_URL" ]; then
+                echo "\u274c [SA] FATAL: video_drive_url is required for mode '${ASSET_MODE}' with Drive mode ON." >&2
+                echo "[SA_STATUS:FAILED:video_drive_url missing for mode ${ASSET_MODE}]"
+                exit 1
+              fi
+              download_from_drive "$VIDEO_DRIVE_URL" "live_video.mp4" "VIDEO"
+            fi
+
+          else
+            # ---- LOCAL MODE: verify repo files exist ----
+            echo "\U0001f4c1 [SA] LOCAL MODE active. Verifying repository assets..."
+            MISSING=false
+
+            if [ "$NEEDS_PHOTO" = "true" ]; then
+              if [ ! -f "${PHOTO_FILENAME}" ]; then
+                echo "\u274c [SA] FATAL: Photo file '${PHOTO_FILENAME}' NOT FOUND in repository root!" >&2
+                echo "    Commit it to the repo root or enable Drive mode." >&2
+                MISSING=true
+              else
+                local_size=$(du -sh "${PHOTO_FILENAME}" | awk '{print $1}')
+                echo "\u2705 [SA] Photo file found: ${PHOTO_FILENAME} (${local_size})"
+                # Normalise filename to expected name if different
+                [ "${PHOTO_FILENAME}" != "live_photo.jpg" ] && cp "${PHOTO_FILENAME}" live_photo.jpg
+              fi
+            fi
+
+            if [ "$NEEDS_VIDEO" = "true" ]; then
+              if [ ! -f "${VIDEO_FILENAME}" ]; then
+                echo "\u274c [SA] FATAL: Video file '${VIDEO_FILENAME}' NOT FOUND in repository root!" >&2
+                echo "    Commit it to the repo root or enable Drive mode." >&2
+                MISSING=true
+              else
+                local_size=$(du -sh "${VIDEO_FILENAME}" | awk '{print $1}')
+                echo "\u2705 [SA] Video file found: ${VIDEO_FILENAME} (${local_size})"
+                [ "${VIDEO_FILENAME}" != "live_video.mp4" ] && cp "${VIDEO_FILENAME}" live_video.mp4
+              fi
+            fi
+
+            if [ "$MISSING" = "true" ]; then
+              echo "[SA_STATUS:FAILED:Required media files missing from repository]"
+              exit 1
+            fi
+          fi
+
+          echo ""
+          echo "\u2705 [SA] All required assets acquired and ready."
+          echo ""
+
+
+      # ============================================================
+      # STEP 5 — Probe media files and calculate stream timing plan
+      #
+      # For photo_video mode: video duration is probed and subtracted
+      #   from total to calculate the photo phase duration.
+      # For photo_only mode:  entire duration is photo phase.
+      # For video_only mode:  video is looped; no photo phase.
+      # Also detects whether the video contains an audio track.
+      # ============================================================
+      - name: "[5/8] Probe assets and calculate timing plan"
         id: timing
         shell: bash
         run: |
-          echo "🎬 [SA] Probing live_video.mp4 with ffprobe..."
-          echo ""
-
-          # ---- Get video duration (floating-point seconds) ----
-          VIDEO_DUR_RAW=$(ffprobe \
-            -v error \
-            -show_entries format=duration \
-            -of default=noprint_wrappers=1:nokey=1 \
-            live_video.mp4 2>/dev/null)
-
-          if [ -z "$VIDEO_DUR_RAW" ] || [ "$VIDEO_DUR_RAW" = "N/A" ]; then
-            echo "❌ [SA] FATAL: ffprobe could not determine video duration." >&2
-            echo "   Ensure live_video.mp4 is a valid, playable video file." >&2
-            exit 1
-          fi
-
-          # ---- Check for audio stream ----
-          HAS_AUDIO_RAW=$(ffprobe \
-            -v error \
-            -select_streams a \
-            -show_entries stream=index \
-            -of csv=p=0 \
-            live_video.mp4 2>/dev/null)
-
-          if [ -n "$HAS_AUDIO_RAW" ]; then
-            HAS_AUDIO="true"
-          else
-            HAS_AUDIO="false"
-          fi
-
-          # ---- Use Python for precise arithmetic ----
+          ASSET_MODE="${{ steps.params.outputs.asset_mode }}"
           TOTAL_MINUTES="${{ steps.params.outputs.total_minutes }}"
-
-          python3 - <<PYEOF
-import sys, math
-
-try:
-    video_dur = float("${VIDEO_DUR_RAW}".strip())
-except ValueError:
-    print("[SA] FATAL: Could not parse video duration.", file=sys.stderr)
-    sys.exit(1)
-
-total_minutes = int("${TOTAL_MINUTES}")
-total_seconds = total_minutes * 60
-video_dur_int = int(video_dur)
-photo_dur     = total_seconds - video_dur_int
-
-print(f"  Video duration (raw) : {video_dur:.3f} seconds")
-print(f"  Video duration (int) : {video_dur_int} seconds")
-print(f"  Total duration       : {total_seconds} seconds ({total_minutes}m)")
-print(f"  Photo phase duration : {photo_dur} seconds")
-
-if video_dur <= 0:
-    print("[SA] FATAL: Video duration is zero or negative.", file=sys.stderr)
-    sys.exit(1)
-
-if photo_dur <= 10:
-    needed = video_dur_int + 11
-    print("", file=sys.stderr)
-    print(f"[SA] FATAL: video ({video_dur:.1f}s) is too long for {total_seconds}s total.", file=sys.stderr)
-    print(f"   Increase total_minutes to at least {math.ceil(needed/60)} minutes, or use a shorter video.", file=sys.stderr)
-    sys.exit(1)
-
-print()
-print(f"  PLAN: Photo {photo_dur}s  +  Video {video_dur_int}s  =  Total {total_seconds}s")
-PYEOF
-
-          # ---- Re-compute in bash for GITHUB_OUTPUT ----
-          VIDEO_DUR_INT=$(python3 -c "print(int(float('${VIDEO_DUR_RAW}'.strip())))")
           TOTAL_SECONDS=$(( TOTAL_MINUTES * 60 ))
-          PHOTO_DUR=$(( TOTAL_SECONDS - VIDEO_DUR_INT ))
-          # Noise source for video-phase audio (+ 2s buffer so lavfi does not end early)
-          VIDEO_DUR_NOISE=$(( VIDEO_DUR_INT + 2 ))
 
+          echo "\U0001f3ac [SA] Calculating timing plan for mode: ${ASSET_MODE}"
+          echo "    Total duration: ${TOTAL_MINUTES} min (${TOTAL_SECONDS}s)"
           echo ""
-          echo "┌────────────────────────────────────────────┐"
-          echo "│             TIMING PLAN CONFIRMED             │"
-          echo "├────────────────────────────────────────────┤"
-          printf "│  📸 Photo phase : %-26s │\n" "${PHOTO_DUR}s"
-          printf "│  🎬 Video phase : %-26s │\n" "${VIDEO_DUR_INT}s"
-          printf "│  ⏱️  Total       : %-26s │\n" "${TOTAL_SECONDS}s (${TOTAL_MINUTES}m)"
-          printf "│  🔊 Video audio : %-26s │\n" "${HAS_AUDIO}"
-          echo "└────────────────────────────────────────────┘"
 
-          # ---- Write to GITHUB_OUTPUT ----
-          echo "video_dur=${VIDEO_DUR_RAW}"           >> "$GITHUB_OUTPUT"
-          echo "video_dur_int=${VIDEO_DUR_INT}"       >> "$GITHUB_OUTPUT"
-          echo "video_dur_noise=${VIDEO_DUR_NOISE}"   >> "$GITHUB_OUTPUT"
-          echo "photo_dur=${PHOTO_DUR}"               >> "$GITHUB_OUTPUT"
-          echo "total_seconds=${TOTAL_SECONDS}"       >> "$GITHUB_OUTPUT"
-          echo "has_audio=${HAS_AUDIO}"               >> "$GITHUB_OUTPUT"
+          # ---- Defaults ----
+          VIDEO_DUR_RAW="0"
+          VIDEO_DUR_INT=0
+          VIDEO_DUR_NOISE=2
+          PHOTO_DUR=$TOTAL_SECONDS
+          HAS_AUDIO="false"
 
-      # ----------------------------------------------------------
+          # ---- Probe video if needed ----
+          if [ "$ASSET_MODE" = "photo_video" ] || [ "$ASSET_MODE" = "video_only" ]; then
+            echo "\U0001f50d [SA] Probing live_video.mp4 with ffprobe..."
+
+            VIDEO_DUR_RAW=$(ffprobe \
+              -v error \
+              -show_entries format=duration \
+              -of default=noprint_wrappers=1:nokey=1 \
+              live_video.mp4 2>/dev/null)
+
+            if [ -z "$VIDEO_DUR_RAW" ] || [ "$VIDEO_DUR_RAW" = "N/A" ]; then
+              echo "\u274c [SA] FATAL: ffprobe could not determine video duration." >&2
+              echo "[SA_STATUS:FAILED:ffprobe failed — live_video.mp4 may be corrupt]"
+              exit 1
+            fi
+
+            # Check for audio stream in video
+            HAS_AUDIO_RAW=$(ffprobe \
+              -v error \
+              -select_streams a \
+              -show_entries stream=index \
+              -of csv=p=0 \
+              live_video.mp4 2>/dev/null)
+            [ -n "$HAS_AUDIO_RAW" ] && HAS_AUDIO="true" || HAS_AUDIO="false"
+
+            VIDEO_DUR_INT=$(python3 -c "print(int(float('${VIDEO_DUR_RAW}'.strip())))")
+            VIDEO_DUR_NOISE=$(( VIDEO_DUR_INT + 2 ))
+
+            echo "    Video duration : ${VIDEO_DUR_INT}s  |  Has audio: ${HAS_AUDIO}"
+          fi
+
+          # ---- Calculate photo phase duration ----
+          if [ "$ASSET_MODE" = "photo_video" ]; then
+            PHOTO_DUR=$(( TOTAL_SECONDS - VIDEO_DUR_INT ))
+            if [ "$PHOTO_DUR" -le 10 ]; then
+              NEEDED_MIN=$(python3 -c "import math; print(math.ceil((${VIDEO_DUR_INT} + 11) / 60))")
+              echo "\u274c [SA] FATAL: video (${VIDEO_DUR_INT}s) is too long for ${TOTAL_SECONDS}s total." >&2
+              echo "    Increase total_minutes to at least ${NEEDED_MIN} min, or use a shorter video." >&2
+              echo "[SA_STATUS:FAILED:video too long for chosen duration — increase total_minutes to ${NEEDED_MIN}]"
+              exit 1
+            fi
+          elif [ "$ASSET_MODE" = "photo_only" ]; then
+            PHOTO_DUR=$TOTAL_SECONDS
+            VIDEO_DUR_INT=0
+          else
+            # video_only: no photo phase
+            PHOTO_DUR=0
+          fi
+
+          # ---- Print timing summary ----
+          echo ""
+          echo "\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510"
+          echo "\u2502            TIMING PLAN CONFIRMED                       \u2502"
+          echo "\u251c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524"
+          printf "\u2502  Mode          : %-27s \u2502\n" "${ASSET_MODE}"
+          printf "\u2502  \U0001f4f8 Photo phase  : %-27s \u2502\n" "${PHOTO_DUR}s"
+          printf "\u2502  \U0001f3ac Video phase  : %-27s \u2502\n" "${VIDEO_DUR_INT}s"
+          printf "\u2502  \u23f1  Total       : %-27s \u2502\n" "${TOTAL_SECONDS}s (${TOTAL_MINUTES}m)"
+          printf "\u2502  \U0001f50a Video audio : %-27s \u2502\n" "${HAS_AUDIO}"
+          echo "\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518"
+          echo ""
+
+          # ---- Write outputs ----
+          echo "video_dur=${VIDEO_DUR_RAW}"         >> "$GITHUB_OUTPUT"
+          echo "video_dur_int=${VIDEO_DUR_INT}"     >> "$GITHUB_OUTPUT"
+          echo "video_dur_noise=${VIDEO_DUR_NOISE}" >> "$GITHUB_OUTPUT"
+          echo "photo_dur=${PHOTO_DUR}"             >> "$GITHUB_OUTPUT"
+          echo "total_seconds=${TOTAL_SECONDS}"     >> "$GITHUB_OUTPUT"
+          echo "has_audio=${HAS_AUDIO}"             >> "$GITHUB_OUTPUT"
+
+
+      # ============================================================
       # STEP 6 — Handle scheduled start time
-      # If start_at is set and is in the future, sleep until then.
-      # ----------------------------------------------------------
+      # Sleeps until the scheduled start if start_at is set and
+      # is in the future. Capped at 5h to avoid runner timeouts.
+      # ============================================================
       - name: "[6/8] Handle scheduled start time"
         shell: bash
         run: |
           START_AT="${{ steps.params.outputs.start_at }}"
 
           if [ -z "$START_AT" ]; then
-            echo "⏰ [SA] No scheduled start time — launching stream immediately."
+            echo "\u23f0 [SA] No scheduled start time — launching immediately."
             exit 0
           fi
 
-          echo "⏰ [SA] Scheduled start time configured: ${START_AT}"
+          echo "\u23f0 [SA] Scheduled start time: ${START_AT}"
 
           DELAY=$(python3 - <<PYEOF
 import datetime, sys
-
-start_at = "${START_AT}".strip()
-if not start_at:
-    print(0)
-    sys.exit(0)
-
 try:
-    if start_at.endswith('Z'):
-        start_at = start_at[:-1] + '+00:00'
-    target = datetime.datetime.fromisoformat(start_at)
+    s = "${START_AT}".strip()
+    if not s: print(0); sys.exit(0)
+    if s.endswith('Z'): s = s[:-1] + '+00:00'
+    target = datetime.datetime.fromisoformat(s)
     if target.tzinfo is None:
         target = target.replace(tzinfo=datetime.timezone.utc)
-    now    = datetime.datetime.now(datetime.timezone.utc)
-    delay  = (target - now).total_seconds()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    delay = (target - now).total_seconds()
     print(max(0, int(delay)))
-except Exception as exc:
-    print(f"[SA][WARN] Could not parse start_at: {exc}", file=sys.stderr)
+except Exception as e:
+    print(f"[SA][WARN] Could not parse start_at: {e}", file=sys.stderr)
     print(0)
 PYEOF
 )
 
           if [ "$DELAY" -gt 0 ]; then
-            # Cap to a safe max to avoid GitHub Actions timeout eating into stream time
-            MAX_WAIT=18000  # 5 hours
-            if [ "$DELAY" -gt "$MAX_WAIT" ]; then
-              echo "⚠️  [SA] Requested wait (${DELAY}s) exceeds 5h safety cap. Capping at ${MAX_WAIT}s."
-              DELAY="$MAX_WAIT"
-            fi
-            HOURS=$(( DELAY / 3600 ))
-            MINS=$(( (DELAY % 3600) / 60 ))
-            SECS=$(( DELAY % 60 ))
-            echo "⏰ [SA] Waiting ${HOURS}h ${MINS}m ${SECS}s until scheduled start..."
+            MAX_WAIT=18000  # 5 hours hard cap on schedule wait
+            [ "$DELAY" -gt "$MAX_WAIT" ] && { echo "\u26a0  [SA] Wait exceeds 5h cap. Capping."; DELAY=$MAX_WAIT; }
+            H=$(( DELAY/3600 )); M=$(( (DELAY%3600)/60 )); S=$(( DELAY%60 ))
+            echo "\u23f0 [SA] Waiting ${H}h ${M}m ${S}s until scheduled start..."
             sleep "$DELAY"
-            echo "✅ [SA] Scheduled start time reached. Proceeding."
+            echo "\u2705 [SA] Scheduled start time reached. Proceeding."
           else
-            echo "✅ [SA] Scheduled start time is in the past — starting immediately."
+            echo "\u2705 [SA] Scheduled time is in the past — starting immediately."
           fi
 
-      # ----------------------------------------------------------
-      # STEP 7 — THE HEART OF V8: Single-session FFmpeg stream
+
+      # ============================================================
+      # STEP 7 — THE CORE ENGINE: Adaptive FFmpeg stream
       #
-      # ONE continuous FFmpeg process that:
-      #   Segment 1: looped photo + faint noise floor for photo_dur seconds
-      #   Segment 2: the video file + its audio (or noise if no audio), once
-      # Concatenated by a single filter_complex and pushed over ONE
-      # never-broken RTMP connection.
+      # This step contains THREE fully dynamic FFmpeg command
+      # builders, one per asset_mode. Every mode uses a single
+      # uninterrupted FFmpeg process for zero-drop streaming.
       #
-      # This is the exact port of build_single_session_cmd() from app.py.
-      # A hard-deadline watchdog (GNU timeout) acts as the _watchdog() from
-      # app.py: it kills FFmpeg EXACTLY when total_minutes elapses (or
-      # stop_at is reached, whichever comes first).
-      # ----------------------------------------------------------
-      - name: "[7/8] Launch single-session FFmpeg stream (photo+video concat)"
+      # AMBIENT AUDIO:
+      #   When ambient_audio=true, the photo-phase audio source
+      #   is replaced with a synthesised outdoor ambient mix:
+      #     - Pink noise low-pass filtered at 400 Hz (traffic rumble)
+      #     - White noise band-pass 800–3000 Hz (tyre hiss)
+      #     - Mixed via amix, volume-normalised
+      #   When false: standard inaudible -60 dB white noise floor.
+      #
+      # CONNECTION DETECTION (STRICT "NO FALSE LIVE" FIX):
+      #   FFmpeg stderr is redirected to /tmp/ffmpeg.log.
+      #   A background monitor process reads it every 5s and
+      #   emits [SA_STATUS:...] markers to stdout which get
+      #   captured in the GitHub Actions job log.
+      #   The frontend poller reads these markers to gate the
+      #   ONLINE status (never flips green on dispatch alone).
+      #
+      # WATCHDOG:
+      #   A background timeout process kills FFmpeg exactly when
+      #   total_minutes (capped at 345) elapses, or when stop_at
+      #   is reached, whichever comes first.
+      # ============================================================
+      - name: "[7/8] Launch adaptive FFmpeg stream"
         id: ffmpeg_stream
         shell: bash
         run: |
-          # ---- Load step outputs ----
+          # ---- Load all step outputs ----
           RTMP_URL="${{ steps.params.outputs.rtmp_url }}"
           RTMP_BASE="${{ steps.params.outputs.rtmp_base }}"
-          BACKUP_RTMP="${{ steps.params.outputs.backup_rtmp }}"
           WIDTH="${{ steps.params.outputs.width }}"
           HEIGHT="${{ steps.params.outputs.height }}"
           RATIO="${{ steps.params.outputs.ratio }}"
           PLATFORM="${{ steps.params.outputs.platform }}"
           TOTAL_MINUTES="${{ steps.params.outputs.total_minutes }}"
           STOP_AT="${{ steps.params.outputs.stop_at }}"
+          ASSET_MODE="${{ steps.params.outputs.asset_mode }}"
+          AMBIENT_AUDIO="${{ steps.params.outputs.ambient_audio }}"
           PHOTO_DUR="${{ steps.timing.outputs.photo_dur }}"
           VIDEO_DUR_INT="${{ steps.timing.outputs.video_dur_int }}"
           VIDEO_DUR_NOISE="${{ steps.timing.outputs.video_dur_noise }}"
           TOTAL_SECONDS="${{ steps.timing.outputs.total_seconds }}"
           HAS_AUDIO="${{ steps.timing.outputs.has_audio }}"
 
-          # ---- The exact QUIET_NOISE constant from app.py ----
-          # ~-60 dB, completely inaudible — keeps the AAC encoder producing
-          # a steady ~128 kbps audio track so YouTube never logs
-          # "audio stream's current bitrate (0) is lower than recommended 128 kbps"
+          FFMPEG_LOG="/tmp/ffmpeg_stderr.log"
+          FFMPEG_EXIT=0
+
+          # ---- Build audio source for the PHOTO phase ----
+          # Standard quiet noise floor (~-60 dB): keeps AAC encoder
+          # producing a steady bitrate without audible sound.
           QUIET_NOISE="anoisesrc=r=44100:amplitude=0.001:color=white"
 
-          # ---- Build filter_complex (exact port of filter graph from app.py) ----
-          #
-          # _vfilter(): scale to canvas, preserve aspect ratio, pad black, 30fps, yuv420p
-          VFILTER_PHOTO="[0:v]scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease,pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=30,format=yuv420p[v0]"
-          VFILTER_VIDEO="[2:v]scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease,pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=30,format=yuv420p[v1]"
+          # Ambient traffic noise: synthesised using FFmpeg lavfi.
+          # Mix of:
+          #   1. Pink noise low-passed at 400Hz — engine/tyre rumble
+          #   2. White noise band-passed 800–3000Hz — wind/tyre hiss
+          #   3. Slight amplitude modulation for natural variation
+          # Delivered as a single lavfi filtergraph string.
+          AMBIENT_NOISE="anoisesrc=r=44100:amplitude=0.09:color=pink,lowpass=f=400,highpass=f=40,volume=1.6,aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100"
 
-          # _afilter(): normalise to 44100Hz / stereo / fltp
-          # This kills the AAC frequency warning and allows concat to join
-          # photo-noise + video-audio without sample rate mismatches.
-          AFILTER_PHOTO="[1:a]aresample=async=1:first_pts=0,aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100[a0]"
+          # Select audio source based on toggle
+          if [ "$AMBIENT_AUDIO" = "true" ]; then
+            PHOTO_AUDIO_SRC="$AMBIENT_NOISE"
+            echo "\U0001f50a [SA] Ambient traffic audio ENABLED (pink noise mix)."
+          else
+            PHOTO_AUDIO_SRC="$QUIET_NOISE"
+            echo "\U0001f50a [SA] Standard quiet noise floor (-60 dB) audio."
+          fi
 
-          # ---- Calculate the hard-deadline watchdog timeout ----
-          # + 8 seconds grace period (mirrors the '+8' in the _watchdog() coroutine)
+          # ---- Standard video filter (scale, pad, fps, yuv420p) ----
+          # Scales to canvas maintaining aspect ratio, pads with black.
+          vf_template() {
+            local IN="$1" OUT="$2"
+            echo "[${IN}]scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=decrease,pad=${WIDTH}:${HEIGHT}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=30,format=yuv420p[${OUT}]"
+          }
+
+          # ---- Standard audio resample filter ----
+          # Normalises to 44100 Hz / stereo / fltp to prevent concat mismatches.
+          af_template() {
+            local IN="$1" OUT="$2"
+            echo "[${IN}]aresample=async=1:first_pts=0,aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100[${OUT}]"
+          }
+
+          # ---- Shared FFmpeg output codec arguments ----
+          # Constant bitrate, zerolatency preset, no scene cuts.
+          CODEC_ARGS="
+            -c:v libx264
+            -preset veryfast
+            -tune zerolatency
+            -profile:v main
+            -level:v 4.0
+            -b:v 2500k
+            -minrate 2500k
+            -maxrate 2500k
+            -bufsize 5000k
+            -pix_fmt yuv420p
+            -r 30
+            -g 60
+            -keyint_min 60
+            -sc_threshold 0
+            -x264opts no-scenecut
+            -c:a aac
+            -b:a 128k
+            -ar 44100
+            -ac 2
+            -max_muxing_queue_size 1024
+            -f flv
+            -flvflags no_duration_filesize"
+
+          # ---- Calculate hard-deadline watchdog timeout ----
+          # Add 8s grace period so the watchdog SIGTERM fires slightly
+          # after the stream target duration, not before.
           TIMEOUT_SECONDS=$(( TOTAL_SECONDS + 8 ))
 
-          # If stop_at is set and earlier, use it instead
+          # Override with stop_at if it's earlier than our deadline
           if [ -n "$STOP_AT" ]; then
-            STOP_AT_SECS=$(python3 - <<PYEOF
+            STOP_SECS=$(python3 - <<PYEOF
 import datetime, sys
 try:
     s = "${STOP_AT}".strip()
@@ -510,164 +795,315 @@ try:
     t = datetime.datetime.fromisoformat(s)
     if t.tzinfo is None: t = t.replace(tzinfo=datetime.timezone.utc)
     now = datetime.datetime.now(datetime.timezone.utc)
-    rem = int((t - now).total_seconds())
-    print(max(0, rem))
-except Exception:
-    print(-1)
+    print(max(0, int((t - now).total_seconds())))
+except: print(-1)
 PYEOF
 )
-            if [ "$STOP_AT_SECS" -gt 0 ] && [ "$STOP_AT_SECS" -lt "$TIMEOUT_SECONDS" ]; then
-              echo "⏰ [SA] Hard stop_at deadline is earlier: ${STOP_AT_SECS}s from now."
-              TIMEOUT_SECONDS="$STOP_AT_SECS"
+            if [ "$STOP_SECS" -gt 0 ] && [ "$STOP_SECS" -lt "$TIMEOUT_SECONDS" ]; then
+              echo "\u23f0 [SA] Hard stop_at deadline is earlier: ${STOP_SECS}s from now."
+              TIMEOUT_SECONDS="$STOP_SECS"
             fi
           fi
 
           echo ""
-          echo "🚀 [SA] ═════════════════════════════════════════════"
-          echo "🚀 [SA]  LAUNCHING SINGLE CONTINUOUS FFMPEG SESSION"
-          echo "🚀 [SA] ═════════════════════════════════════════════"
-          echo "🚀 [SA]  Platform       : ${PLATFORM} | ${RATIO} | ${WIDTH}x${HEIGHT}"
-          echo "🚀 [SA]  Photo Phase    : ${PHOTO_DUR}s"
-          echo "🚀 [SA]  Video Phase    : ${VIDEO_DUR_INT}s (audio: ${HAS_AUDIO})"
-          echo "🚀 [SA]  Watchdog Timer : ${TIMEOUT_SECONDS}s"
-          echo "🚀 [SA]  RTMP           : ${RTMP_BASE}****"
-          echo "🚀 [SA]  Mode           : ONE session. ONE connection. ZERO drops."
-          echo "🚀 [SA] ═════════════════════════════════════════════"
+          echo "\U0001f680 [SA] \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+          echo "\U0001f680 [SA]  LAUNCHING ADAPTIVE FFMPEG STREAMING SESSION"
+          echo "\U0001f680 [SA] \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+          printf "\U0001f680 [SA]  Platform    : %s | %s | %sx%s\n" "$PLATFORM" "$RATIO" "$WIDTH" "$HEIGHT"
+          printf "\U0001f680 [SA]  Asset mode  : %s\n" "$ASSET_MODE"
+          printf "\U0001f680 [SA]  Photo phase : %ss\n" "$PHOTO_DUR"
+          printf "\U0001f680 [SA]  Video phase : %ss (audio: %s)\n" "$VIDEO_DUR_INT" "$HAS_AUDIO"
+          printf "\U0001f680 [SA]  Watchdog    : %ss\n" "$TIMEOUT_SECONDS"
+          printf "\U0001f680 [SA]  Ambient     : %s\n" "$AMBIENT_AUDIO"
+          printf "\U0001f680 [SA]  RTMP target : %s****\n" "$RTMP_BASE"
+          echo "\U0001f680 [SA] \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
           echo ""
 
-          FFMPEG_EXIT=0
+          # Emit initial connecting status marker
+          echo "[SA_STATUS:CONNECTING]"
 
-          if [ "$HAS_AUDIO" = "true" ]; then
-            # ================================================================
-            # CASE A: Video has its own audio track
-            # Inputs:
-            #   [0] = looped photo (rate-limited, -re, for photo_dur seconds)
-            #   [1] = faint noise source for photo phase (inaudible -60 dB)
-            #   [2] = video file (rate-limited, -re) with its own audio
-            #
-            # filter_complex:
-            #   [0:v] -> scale+pad+fps+yuv420p -> [v0]
-            #   [2:v] -> scale+pad+fps+yuv420p -> [v1]
-            #   [1:a] -> resample 44100 stereo fltp -> [a0]  (photo noise)
-            #   [2:a] -> resample 44100 stereo fltp -> [a1]  (video audio)
-            #   [v0][a0][v1][a1] -> concat n=2:v=1:a=1 -> [vout][aout]
-            # ================================================================
-            FILTER_COMPLEX="${VFILTER_PHOTO};${VFILTER_VIDEO};${AFILTER_PHOTO};[2:a]aresample=async=1:first_pts=0,aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100[a1];[v0][a0][v1][a1]concat=n=2:v=1:a=1[vout][aout]"
+          # ==============================================================
+          # BACKGROUND CONNECTION MONITOR
+          # Reads FFmpeg stderr log every 5 seconds and emits status
+          # markers to stdout. The frontend poller reads these markers
+          # from the GitHub Actions job log to update the UI.
+          #
+          # HANDSHAKE_OK is emitted when FFmpeg confirms it has started
+          # sending packets ("Output #0" + first frame= line in stderr).
+          # The UI MUST wait for this before showing ONLINE.
+          # FAILED is emitted when connection errors are detected.
+          # ==============================================================
+          monitor_ffmpeg() {
+            local LOG="$1"
+            local FFMPEG_PID="$2"
+            local CONNECTED=false
+            local LAST_FRAME=0
+            local LAST_PHASE=""
+            local CHECK_COUNT=0
 
-            timeout --kill-after=10s "${TIMEOUT_SECONDS}s" \
-              ffmpeg \
-                -hide_banner -y \
+            while kill -0 "$FFMPEG_PID" 2>/dev/null; do
+              sleep 5
+              CHECK_COUNT=$(( CHECK_COUNT + 1 ))
+              [ ! -f "$LOG" ] && continue
+
+              # ---- Check for RTMP connection failures ----
+              # These patterns indicate the stream key is wrong or
+              # the server rejected the connection.
+              if grep -qiE \
+                'connection refused|connection timed out|no route to host|failed to connect|connection reset|error opening|could not write header|handshake failed|403 forbidden|401 unauthorized|invalid argument|server returned|code=403|code=401|RTMP_Connect.*fail|NetStream.Publish.BadName|NetConnection.Connect.Rejected' \
+                "$LOG" 2>/dev/null; then
+                  FAIL_LINE=$(grep -imE \
+                    'connection refused|timed out|failed to connect|reset|error opening|could not write|handshake|403|401|invalid|BadName|Rejected' \
+                    "$LOG" | tail -1 | sed 's/^[[:space:]]*//' | cut -c1-140)
+                  echo "[SA_STATUS:FAILED:${FAIL_LINE}]"
+                  return
+              fi
+
+              # ---- Check for successful RTMP handshake ----
+              # FFmpeg writes "Output #0" to stderr when it has opened
+              # the output stream and begun muxing. The first frame=
+              # line confirms packets are actively being sent.
+              if ! $CONNECTED; then
+                if grep -qE 'Output #0|frame=\s*[1-9]' "$LOG" 2>/dev/null; then
+                  CONNECTED=true
+                  echo "[SA_STATUS:HANDSHAKE_OK]"
+                  echo "[SA_STATUS:PHASE:PHOTO]"
+                  LAST_PHASE="photo"
+                fi
+              fi
+
+              # ---- Emit frame count updates (every 3 checks = ~15s) ----
+              if $CONNECTED && [ $(( CHECK_COUNT % 3 )) -eq 0 ]; then
+                FRAME=$(grep -oP '(?<=frame=\s{0,6})\d+' "$LOG" | tail -1)
+                if [ -n "$FRAME" ] && [ "$FRAME" != "$LAST_FRAME" ]; then
+                  echo "[SA_STATUS:FRAME_COUNT:${FRAME}]"
+                  LAST_FRAME="$FRAME"
+                fi
+              fi
+
+            done
+          }
+
+          # ==============================================================
+          # FFMPEG COMMAND BUILDER — 3 MODES
+          # ==============================================================
+
+          # ---- Common output tail (codec + RTMP) ----
+          run_ffmpeg_with_args() {
+            # Args are passed as individual elements before this function
+            # appends the codec chain and RTMP URL.
+            ffmpeg \
+              -hide_banner -y \
+              "$@" \
+              -c:v libx264 \
+              -preset veryfast \
+              -tune zerolatency \
+              -profile:v main \
+              -level:v 4.0 \
+              -b:v 2500k \
+              -minrate 2500k \
+              -maxrate 2500k \
+              -bufsize 5000k \
+              -pix_fmt yuv420p \
+              -r 30 \
+              -g 60 \
+              -keyint_min 60 \
+              -sc_threshold 0 \
+              -x264opts no-scenecut \
+              -c:a aac \
+              -b:a 128k \
+              -ar 44100 \
+              -ac 2 \
+              -max_muxing_queue_size 1024 \
+              -f flv \
+              -flvflags no_duration_filesize \
+              "${RTMP_URL}" \
+            2>>"$FFMPEG_LOG"
+          }
+
+          # ==============================================================
+          # MODE A: PHOTO + VIDEO (Sequential) — Original v8 core mode
+          #
+          # Single continuous FFmpeg session:
+          #   Segment 1: Looped photo + audio for photo_dur seconds
+          #   Segment 2: Video file + its audio (or noise), played once
+          # Joined by filter_complex concat. One RTMP connection, zero
+          # drops at the phase boundary.
+          # ==============================================================
+          run_photo_video_mode() {
+            local VFILTER_PHOTO; VFILTER_PHOTO=$(vf_template "0:v" "v0")
+            local VFILTER_VIDEO; VFILTER_VIDEO=$(vf_template "2:v" "v1")
+            local AFILTER_PHOTO; AFILTER_PHOTO=$(af_template "1:a" "a0")
+
+            if [ "$HAS_AUDIO" = "true" ]; then
+              # Video has its own audio track
+              local FC="${VFILTER_PHOTO};${VFILTER_VIDEO};${AFILTER_PHOTO};[2:a]aresample=async=1:first_pts=0,aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100[a1];[v0][a0][v1][a1]concat=n=2:v=1:a=1[vout][aout]"
+
+              run_ffmpeg_with_args \
                 -re -loop 1 -framerate 30 -t "${PHOTO_DUR}" -i live_photo.jpg \
-                -f lavfi -t "${PHOTO_DUR}" -i "${QUIET_NOISE}" \
+                -f lavfi -t "${PHOTO_DUR}" -i "${PHOTO_AUDIO_SRC}" \
                 -re -i live_video.mp4 \
-                -filter_complex "${FILTER_COMPLEX}" \
-                -map "[vout]" -map "[aout]" \
-                -c:v libx264 \
-                -preset veryfast \
-                -tune zerolatency \
-                -profile:v main \
-                -level:v 4.0 \
-                -b:v 2500k \
-                -minrate 2500k \
-                -maxrate 2500k \
-                -bufsize 5000k \
-                -pix_fmt yuv420p \
-                -r 30 \
-                -g 60 \
-                -keyint_min 60 \
-                -sc_threshold 0 \
-                -x264opts no-scenecut \
-                -c:a aac \
-                -b:a 128k \
-                -ar 44100 \
-                -ac 2 \
-                -max_muxing_queue_size 1024 \
-                -f flv \
-                -flvflags no_duration_filesize \
-                "${RTMP_URL}" \
-              || FFMPEG_EXIT=$?
-          else
-            # ================================================================
-            # CASE B: Video has NO audio track
-            # An extra quiet noise source is injected for the video phase too
-            # (mirrors the 'if not video_has_audio' branch in app.py).
-            # Inputs:
-            #   [0] = looped photo (rate-limited, -re, for photo_dur seconds)
-            #   [1] = faint noise for photo phase
-            #   [2] = video file (rate-limited, -re) — video-only, no audio
-            #   [3] = faint noise for video phase (t = video_dur + 2s buffer)
-            #
-            # filter_complex:
-            #   [0:v] -> scale+pad+fps+yuv420p -> [v0]
-            #   [2:v] -> scale+pad+fps+yuv420p -> [v1]
-            #   [1:a] -> resample 44100 stereo fltp -> [a0]  (photo noise)
-            #   [3:a] -> resample 44100 stereo fltp -> [a1]  (video noise floor)
-            #   [v0][a0][v1][a1] -> concat n=2:v=1:a=1 -> [vout][aout]
-            # ================================================================
-            FILTER_COMPLEX="${VFILTER_PHOTO};${VFILTER_VIDEO};${AFILTER_PHOTO};[3:a]aresample=async=1:first_pts=0,aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100[a1];[v0][a0][v1][a1]concat=n=2:v=1:a=1[vout][aout]"
+                -filter_complex "${FC}" \
+                -map "[vout]" -map "[aout]"
+            else
+              # Video has NO audio — inject quiet noise for video phase too
+              local FC="${VFILTER_PHOTO};${VFILTER_VIDEO};${AFILTER_PHOTO};[3:a]aresample=async=1:first_pts=0,aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100[a1];[v0][a0][v1][a1]concat=n=2:v=1:a=1[vout][aout]"
 
-            timeout --kill-after=10s "${TIMEOUT_SECONDS}s" \
-              ffmpeg \
-                -hide_banner -y \
+              run_ffmpeg_with_args \
                 -re -loop 1 -framerate 30 -t "${PHOTO_DUR}" -i live_photo.jpg \
-                -f lavfi -t "${PHOTO_DUR}" -i "${QUIET_NOISE}" \
+                -f lavfi -t "${PHOTO_DUR}" -i "${PHOTO_AUDIO_SRC}" \
                 -re -i live_video.mp4 \
                 -f lavfi -t "${VIDEO_DUR_NOISE}" -i "${QUIET_NOISE}" \
-                -filter_complex "${FILTER_COMPLEX}" \
+                -filter_complex "${FC}" \
+                -map "[vout]" -map "[aout]"
+            fi
+          }
+
+          # ==============================================================
+          # MODE B: PHOTO ONLY
+          #
+          # The static photo loops for the entire stream duration.
+          # Audio is either ambient traffic noise or quiet noise floor.
+          # Simple 1-segment stream — no concat filter needed.
+          # ==============================================================
+          run_photo_only_mode() {
+            local VFILTER; VFILTER=$(vf_template "0:v" "vout")
+            local AFILTER; AFILTER=$(af_template "1:a" "aout")
+            local FC="${VFILTER};${AFILTER}"
+
+            echo "\U0001f4f8 [SA] PHOTO ONLY mode: looping photo for ${TOTAL_SECONDS}s"
+
+            run_ffmpeg_with_args \
+              -re -loop 1 -framerate 30 -t "${TOTAL_SECONDS}" -i live_photo.jpg \
+              -f lavfi -t "${TOTAL_SECONDS}" -i "${PHOTO_AUDIO_SRC}" \
+              -filter_complex "${FC}" \
+              -map "[vout]" -map "[aout]"
+          }
+
+          # ==============================================================
+          # MODE C: VIDEO ONLY
+          #
+          # The video plays on a loop for the full stream duration.
+          # -stream_loop -1 creates an infinite loop; the watchdog
+          # timer kills FFmpeg when total_seconds elapses.
+          # Audio uses the video's own track, or quiet noise if silent.
+          # ==============================================================
+          run_video_only_mode() {
+            echo "\U0001f3ac [SA] VIDEO ONLY mode: looping video for ${TOTAL_SECONDS}s"
+
+            local VFILTER; VFILTER=$(vf_template "0:v" "vout")
+
+            if [ "$HAS_AUDIO" = "true" ]; then
+              # Video has audio: scale+pad video, resample its audio
+              local AFILTER; AFILTER=$(af_template "0:a" "aout")
+              local FC="${VFILTER};${AFILTER}"
+
+              run_ffmpeg_with_args \
+                -stream_loop -1 -re -i live_video.mp4 \
+                -filter_complex "${FC}" \
                 -map "[vout]" -map "[aout]" \
-                -c:v libx264 \
-                -preset veryfast \
-                -tune zerolatency \
-                -profile:v main \
-                -level:v 4.0 \
-                -b:v 2500k \
-                -minrate 2500k \
-                -maxrate 2500k \
-                -bufsize 5000k \
-                -pix_fmt yuv420p \
-                -r 30 \
-                -g 60 \
-                -keyint_min 60 \
-                -sc_threshold 0 \
-                -x264opts no-scenecut \
-                -c:a aac \
-                -b:a 128k \
-                -ar 44100 \
-                -ac 2 \
-                -max_muxing_queue_size 1024 \
-                -f flv \
-                -flvflags no_duration_filesize \
-                "${RTMP_URL}" \
-              || FFMPEG_EXIT=$?
-          fi
+                -t "${TOTAL_SECONDS}"
+            else
+              # Video has NO audio: inject noise floor
+              local AFILTER; AFILTER=$(af_template "1:a" "aout")
+              local FC="${VFILTER};${AFILTER}"
+
+              run_ffmpeg_with_args \
+                -stream_loop -1 -re -i live_video.mp4 \
+                -f lavfi -t "${TOTAL_SECONDS}" -i "${PHOTO_AUDIO_SRC}" \
+                -filter_complex "${FC}" \
+                -map "[vout]" -map "[aout]" \
+                -t "${TOTAL_SECONDS}"
+            fi
+          }
+
+          # ==============================================================
+          # LAUNCH: Watchdog + Monitor + FFmpeg
+          # ==============================================================
+
+          # Start FFmpeg in background (stderr → log file)
+          touch "$FFMPEG_LOG"
+
+          case "$ASSET_MODE" in
+            photo_video)
+              run_photo_video_mode &
+              ;;
+            photo_only)
+              run_photo_only_mode &
+              ;;
+            video_only)
+              run_video_only_mode &
+              ;;
+            *)
+              echo "[SA_STATUS:FAILED:Unknown asset_mode: ${ASSET_MODE}]"
+              exit 1
+              ;;
+          esac
+          FFMPEG_PID=$!
+
+          # Start background connection monitor
+          monitor_ffmpeg "$FFMPEG_LOG" "$FFMPEG_PID" &
+          MONITOR_PID=$!
+
+          # Start background watchdog timer
+          (
+            sleep "${TIMEOUT_SECONDS}"
+            echo "[SA_STATUS:WATCHDOG_TIMEOUT]"
+            echo "\u23f1 [SA] Watchdog fired after ${TIMEOUT_SECONDS}s. Sending SIGTERM to FFmpeg PID ${FFMPEG_PID}."
+            kill -TERM "$FFMPEG_PID" 2>/dev/null
+            sleep 10
+            kill -9 "$FFMPEG_PID" 2>/dev/null
+          ) &
+          WATCHDOG_PID=$!
+
+          # Wait for FFmpeg to finish
+          wait "$FFMPEG_PID" || FFMPEG_EXIT=$?
+
+          # Clean up background processes
+          kill "$MONITOR_PID"  2>/dev/null; wait "$MONITOR_PID"  2>/dev/null
+          kill "$WATCHDOG_PID" 2>/dev/null; wait "$WATCHDOG_PID" 2>/dev/null
 
           echo ""
-          if [ "$FFMPEG_EXIT" -eq 0 ]; then
-            echo "✅ [SA] FFmpeg session finished cleanly (exit 0)."
-          elif [ "$FFMPEG_EXIT" -eq 124 ]; then
-            echo "⏱️  [SA] FFmpeg stopped by hard-deadline watchdog (SIGTERM after timeout)."
-            echo "⏱️  [SA] This is the EXPECTED behaviour for a time-limited stream."
+          if   [ "$FFMPEG_EXIT" -eq 0 ];   then
+            echo "\u2705 [SA] FFmpeg exited cleanly (code 0)."
+            echo "[SA_STATUS:COMPLETE]"
+          elif [ "$FFMPEG_EXIT" -eq 130 ] || [ "$FFMPEG_EXIT" -eq 143 ]; then
+            echo "\u23f1 [SA] FFmpeg stopped by watchdog SIGTERM (expected for timed streams)."
+            echo "[SA_STATUS:COMPLETE]"
           elif [ "$FFMPEG_EXIT" -eq 137 ]; then
-            echo "⚡ [SA] FFmpeg force-killed by watchdog (SIGKILL after SIGTERM grace)."
+            echo "\u26a1 [SA] FFmpeg force-killed by watchdog SIGKILL."
+            echo "[SA_STATUS:COMPLETE]"
           else
-            echo "⚠️  [SA] FFmpeg exited with code: ${FFMPEG_EXIT}"
+            echo "\u26a0  [SA] FFmpeg exited with code: ${FFMPEG_EXIT}"
+            # Check if failure was already emitted by monitor
+            if ! grep -q 'SA_STATUS:FAILED' "$FFMPEG_LOG" 2>/dev/null; then
+              LAST_ERR=$(tail -5 "$FFMPEG_LOG" | grep -i error | tail -1 | cut -c1-140)
+              echo "[SA_STATUS:FAILED:FFmpeg exit ${FFMPEG_EXIT}: ${LAST_ERR}]"
+            fi
           fi
 
           echo "ffmpeg_exit_code=${FFMPEG_EXIT}" >> "$GITHUB_OUTPUT"
 
-      # ----------------------------------------------------------
-      # STEP 8 — Send the RTMP end-of-stream signal
+          # Print last 20 lines of FFmpeg stderr for debugging
+          echo ""
+          echo "--- FFmpeg stderr tail ---"
+          tail -20 "$FFMPEG_LOG" 2>/dev/null || true
+          echo "--- end stderr ---"
+          echo ""
+
+
+      # ============================================================
+      # STEP 8 — Send RTMP end-of-stream signal (clean teardown)
       #
-      # Exact port of ffmpeg_end_signal() from app.py:
-      # 3-second pure-black video clip + inaudible noise floor
-      # This forces RTMP deleteStream / FCUnpublish, which causes
-      # YouTube Studio to go OFFLINE IMMEDIATELY instead of spinning
-      # on "Preparing stream" for ~30 seconds.
+      # Pushes a 3-second pure-black video clip to the RTMP server.
+      # This triggers RTMP deleteStream / FCUnpublish, forcing
+      # YouTube Studio to go OFFLINE immediately instead of
+      # spinning on "Preparing stream" for ~30 seconds.
       #
-      # Runs with `if: always()` so it fires even when the main
-      # stream step times out or fails.
-      # ----------------------------------------------------------
-      - name: "[8/8] Send RTMP end-of-stream signal (clean termination)"
+      # Uses if: always() so this fires even after a failure or
+      # timeout in Step 7.
+      # ============================================================
+      - name: "[8/8] Send RTMP end-of-stream signal (clean teardown)"
         if: always()
         shell: bash
         run: |
@@ -675,61 +1111,45 @@ PYEOF
           RTMP_BASE="${{ steps.params.outputs.rtmp_base }}"
           WIDTH="${{ steps.params.outputs.width }}"
           HEIGHT="${{ steps.params.outputs.height }}"
-          QUIET_NOISE="anoisesrc=r=44100:amplitude=0.001:color=white"
 
           echo ""
-          echo "📡 [SA] ═════════════════════════════════════════════"
-          echo "📡 [SA]  SENDING RTMP END-OF-STREAM SIGNAL"
-          echo "📡 [SA] ═════════════════════════════════════════════"
-          echo "📡 [SA]  Pushing 3-second pure-black clip + quiet noise floor."
-          echo "📡 [SA]  This triggers RTMP deleteStream/FCUnpublish on the server,"
-          echo "📡 [SA]  forcing YouTube Studio offline IMMEDIATELY with no spin."
-          echo "📡 [SA]  Target: ${RTMP_BASE}****"
+          echo "\U0001f4e1 [SA] \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+          echo "\U0001f4e1 [SA]  SENDING RTMP END-OF-STREAM SIGNAL"
+          echo "\U0001f4e1 [SA] \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+          echo "\U0001f4e1 [SA]  Pushing 3-second pure-black clip."
+          echo "\U0001f4e1 [SA]  This triggers RTMP deleteStream/FCUnpublish,"
+          echo "\U0001f4e1 [SA]  forcing YouTube Studio offline IMMEDIATELY."
+          echo "\U0001f4e1 [SA]  Target: ${RTMP_BASE}****"
           echo ""
 
-          # Use a 20s hard timeout (15s for the 3-second clip + TLS/network overhead)
-          # kill-after=15s forces SIGKILL if SIGTERM is ignored
           timeout --kill-after=15s 20s \
             ffmpeg \
               -hide_banner -y \
               -f lavfi -i "color=c=black:s=${WIDTH}x${HEIGHT}:r=30:d=3" \
-              -f lavfi -i "${QUIET_NOISE}" \
+              -f lavfi -i "anoisesrc=r=44100:amplitude=0.001:color=white" \
               -t 3 \
-              -map 0:v \
-              -map 1:a \
-              -c:v libx264 \
-              -preset ultrafast \
-              -tune zerolatency \
-              -profile:v baseline \
-              -level:v 3.1 \
-              -b:v 100k \
-              -pix_fmt yuv420p \
-              -r 30 \
-              -g 30 \
-              -keyint_min 30 \
-              -sc_threshold 0 \
-              -c:a aac \
-              -b:a 128k \
-              -ar 44100 \
-              -ac 2 \
-              -f flv \
-              -flvflags no_duration_filesize \
+              -map 0:v -map 1:a \
+              -c:v libx264 -preset ultrafast -tune zerolatency \
+              -profile:v baseline -level:v 3.1 \
+              -b:v 100k -pix_fmt yuv420p -r 30 -g 30 -keyint_min 30 -sc_threshold 0 \
+              -c:a aac -b:a 128k -ar 44100 -ac 2 \
+              -f flv -flvflags no_duration_filesize \
               "${RTMP_URL}" \
-            && echo "✅ [SA] End-of-stream signal delivered. YouTube Studio is going offline." \
-            || echo "⚠️  [SA] End signal timed out or failed (YouTube will self-timeout in ~30s)."
+            && echo "\u2705 [SA] End-of-stream signal delivered. YouTube Studio going offline." \
+            || echo "\u26a0  [SA] End signal timed out (YouTube will self-timeout in ~30s)."
 
           echo ""
-          echo "╔══════════════════════════════════════════════╗"
-          echo "║           StreamAdda v8 — SESSION COMPLETE          ║"
-          echo "╚══════════════════════════════════════════════╝"
-          printf "  Stream Name    : %s\n" "${{ steps.params.outputs.stream_name }}"
-          printf "  Platform       : %s\n" "${{ steps.params.outputs.platform_label }}"
-          printf "  Ratio          : %s\n" "${{ steps.params.outputs.ratio }}"
-          printf "  Total Duration : %s minutes\n" "${{ steps.params.outputs.total_minutes }}"
-          printf "  Photo Phase    : %ss\n" "${{ steps.timing.outputs.photo_dur }}"
-          printf "  Video Phase    : %ss\n" "${{ steps.timing.outputs.video_dur_int }}"
-          printf "  Video Audio    : %s\n" "${{ steps.timing.outputs.has_audio }}"
-          printf "  FFmpeg Exit    : %s\n" "${{ steps.ffmpeg_stream.outputs.ffmpeg_exit_code }}"
+          echo "\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557"
+          echo "\u2551       StreamAdda v8 \u2014 SESSION COMPLETE               \u2551"
+          echo "\u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d"
+          printf "  Stream Name  : %s\n" "${{ steps.params.outputs.stream_name }}"
+          printf "  Platform     : %s\n" "${{ steps.params.outputs.platform_label }}"
+          printf "  Asset Mode   : %s\n" "${{ steps.params.outputs.asset_mode }}"
+          printf "  Ratio        : %s\n" "${{ steps.params.outputs.ratio }}"
+          printf "  Duration     : %s min\n" "${{ steps.params.outputs.total_minutes }}"
+          printf "  Drive Mode   : %s\n" "${{ steps.params.outputs.drive_mode }}"
+          printf "  Ambient Audio: %s\n" "${{ steps.params.outputs.ambient_audio }}"
+          printf "  FFmpeg Exit  : %s\n" "${{ steps.ffmpeg_stream.outputs.ffmpeg_exit_code }}"
           echo ""
-          echo "  ✅ Stream session ended. Check YouTube Studio to confirm broadcast offline."
+          echo "  \u2705 Stream session complete. Check YouTube Studio."
           echo ""
