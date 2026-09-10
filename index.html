@@ -262,7 +262,59 @@ dialog::backdrop{background:rgba(15,23,42,.45);backdrop-filter:blur(3px)}
 
 .callout{display:flex;gap:.55rem;background:var(--sky-bg);border:1px solid var(--sky-bd);border-radius:var(--radius-sm);padding:.65rem .8rem;font-size:12px;color:var(--text-sec);margin-bottom:.85rem}
 .callout svg{width:15px;height:15px;color:var(--sky);flex-shrink:0;margin-top:1px}
-@media(max-width:520px){.row2{grid-template-columns:1fr}.telemetry{grid-template-columns:1fr 1fr}}
+
+/* ---- Noise profile picker grid ---- */
+.noise-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:.5rem;margin-top:.65rem}
+.noise-card{display:flex;align-items:center;gap:.55rem;border:1.5px solid var(--border-md);border-radius:var(--radius-sm);background:#fff;padding:.55rem .6rem;cursor:pointer;transition:all var(--tr)}
+.noise-card:hover{background:var(--surface3)}
+.noise-card.on{border-color:var(--primary);background:var(--primary-bg)}
+.noise-card .ni{width:30px;height:30px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);flex-shrink:0}
+.noise-card.on .ni{background:var(--primary);color:#fff;border-color:var(--primary)}
+.noise-card .nt{flex:1;min-width:0}
+.noise-card .nn{font-size:12px;font-weight:700;color:var(--text)}
+.noise-card .nd{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.noise-card .np{width:26px;height:26px;border-radius:50%;border:1.5px solid var(--border-md);background:#fff;display:flex;align-items:center;justify-content:center;color:var(--primary);flex-shrink:0;cursor:pointer}
+.noise-card .np:hover{background:var(--primary-bg);border-color:var(--primary)}
+.noise-card .np.playing{background:var(--primary);color:#fff;border-color:var(--primary);animation:pulse 1.1s infinite}
+.noise-card .np svg{width:13px;height:13px}
+
+/* ---- Custom audio track chips ---- */
+.audio-chips{display:flex;flex-direction:column;gap:.35rem;margin-top:.6rem}
+.audio-chip{display:flex;align-items:center;gap:.5rem;padding:.4rem .55rem;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px}
+.audio-chip svg{width:14px;height:14px;color:var(--violet);flex-shrink:0}
+.audio-chip .an{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+.audio-chip .ax{cursor:pointer;color:var(--muted);display:flex}
+.audio-chip .ax:hover{color:var(--danger)}
+.audio-chip .astat{font-size:10px;font-weight:700;color:var(--ok)}
+
+/* ---- Inline browse-repo button next to filename fields ---- */
+.field-with-browse{display:flex;gap:.4rem}
+.field-with-browse input{flex:1}
+.browse-btn{flex-shrink:0;align-self:flex-end}
+
+/* ---- Asset picker dialog ---- */
+.picker-tabs{display:flex;gap:.4rem;margin-bottom:.75rem}
+.picker-tab{flex:1;text-align:center;padding:.45rem;border:1.5px solid var(--border-md);border-radius:var(--radius-sm);background:#fff;color:var(--text-sec);font-size:12px;font-weight:700;cursor:pointer}
+.picker-tab.on{border-color:var(--primary);background:var(--primary-bg);color:var(--primary)}
+.picker-list{display:flex;flex-direction:column;gap:.3rem;max-height:280px;overflow-y:auto}
+.picker-item{display:flex;align-items:center;gap:.55rem;padding:.45rem .6rem;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface2);cursor:pointer;font-size:12px}
+.picker-item:hover{background:var(--surface3)}
+.picker-item.sel{border-color:var(--primary);background:var(--primary-bg)}
+.picker-item svg{width:14px;height:14px;color:var(--muted);flex-shrink:0}
+.picker-item .pn{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+.picker-item .psz{font-size:10.5px;color:var(--muted)}
+.picker-empty{text-align:center;padding:1.5rem;color:var(--muted);font-size:12px}
+
+/* ---- Error/warning live card (dedicated SSE-style feed) ---- */
+.logwrap.errterm{background:#1a0e10;border-color:#3a1620}
+.errterm .logwrap-head{background:#241014;border-bottom-color:#3a1620;color:#fca5a5}
+.errterm .logwrap-head .lh{color:#f87171}
+.errterm .errlog{background:#1a0e10;color:#fca5a5;max-height:140px;font-size:11.5px;line-height:1.6;padding:.7rem .8rem}
+.errterm .errlog .el-warn{color:#fbbf24}
+.errterm .errlog .el-err{color:#f87171;font-weight:600}
+.live-dot-sm{display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-right:.3rem;animation:pulse 1.4s infinite}
+
+@media(max-width:520px){.row2{grid-template-columns:1fr}.telemetry{grid-template-columns:1fr 1fr}.noise-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -331,15 +383,15 @@ dialog::backdrop{background:rgba(15,23,42,.45);backdrop-filter:blur(3px)}
 <dialog id="dlg-upload">
   <div class="dlg-head">
     <span class="hi"><i data-lucide="cloud-upload"></i></span>
-    <div><h2>Upload Assets</h2><p>Photos &amp; videos → repository root · max 200&nbsp;MB total</p></div>
+    <div><h2>Upload Assets</h2><p>Photos, videos &amp; audio → repository root · max 200&nbsp;MB total · original filenames kept (no rename)</p></div>
     <button class="btn btn-ghost btn-icon x" onclick="document.getElementById('dlg-upload').close()"><i data-lucide="x"></i></button>
   </div>
   <div class="dlg-body">
     <div class="dropzone" id="dropzone" onclick="document.getElementById('file-input').click()">
       <div class="di"><i data-lucide="upload-cloud"></i></div>
-      <div class="dt">Drag &amp; drop or click to select</div>
-      <div class="dd">Images (JPG, PNG, WEBP) and videos (MP4, MOV, WEBM)</div>
-      <input type="file" id="file-input" multiple accept="image/*,video/*" style="display:none" onchange="onFilesPicked(event)" />
+      <div class="dt">Drag &amp; drop or click to select — from gallery or files</div>
+      <div class="dd">Images (JPG, PNG, WEBP), videos (MP4, MOV, WEBM) and audio (MP3, WAV, M4A, AAC, OGG)</div>
+      <input type="file" id="file-input" multiple accept="image/*,video/*,audio/*" style="display:none" onchange="onFilesPicked(event)" />
     </div>
     <div class="uploadbar"><div class="uf" id="usage-fill"></div></div>
     <div class="usage"><span id="usage-text">0 B selected</span><span>Limit 200 MB</span></div>
@@ -348,6 +400,28 @@ dialog::backdrop{background:rgba(15,23,42,.45);backdrop-filter:blur(3px)}
   <div class="dlg-foot">
     <button class="btn btn-ghost" onclick="clearUploads()"><i data-lucide="trash-2"></i> Clear</button>
     <button class="btn btn-primary" id="upload-commit" onclick="commitUploads()" disabled><i data-lucide="github"></i> Upload to repo</button>
+  </div>
+</dialog>
+
+<!-- ============================ ASSET PICKER (browse repo, no retyping) ============================ -->
+<dialog id="dlg-picker">
+  <div class="dlg-head">
+    <span class="hi"><i data-lucide="folder-search"></i></span>
+    <div><h2>Select from repository</h2><p id="picker-sub">Choose already-uploaded files — filenames are kept exactly as uploaded</p></div>
+    <button class="btn btn-ghost btn-icon x" onclick="document.getElementById('dlg-picker').close()"><i data-lucide="x"></i></button>
+  </div>
+  <div class="dlg-body">
+    <div class="picker-tabs" id="picker-tabs">
+      <button class="picker-tab" type="button" onclick="setPickerTab('photo')" id="ptab-photo"><i data-lucide="image"></i> Photos</button>
+      <button class="picker-tab" type="button" onclick="setPickerTab('video')" id="ptab-video"><i data-lucide="film"></i> Videos</button>
+      <button class="picker-tab" type="button" onclick="setPickerTab('audio')" id="ptab-audio"><i data-lucide="music"></i> Audio</button>
+    </div>
+    <div class="hint" id="picker-hint" style="margin-bottom:.6rem"></div>
+    <div class="picker-list" id="picker-list"></div>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn btn-ghost" onclick="scanRepoAssets(true)"><i data-lucide="refresh-cw"></i> Refresh</button>
+    <button class="btn btn-primary" onclick="confirmPicker()"><i data-lucide="check"></i> Use selected</button>
   </div>
 </dialog>
 
@@ -402,8 +476,14 @@ dialog::backdrop{background:rgba(15,23,42,.45);backdrop-filter:blur(3px)}
         <div class="switch" id="drive-switch"></div>
       </div>
       <div id="local-fields" style="margin-top:.75rem">
-        <div class="field" id="local-photo-field"><label>Photo filename(s) — comma-separated for slideshow</label><input type="text" id="f-photo-filename" value="live_photo.jpg" placeholder="live_photo.jpg, photo2.jpg" /></div>
-        <div class="field" id="local-video-field"><label>Video filename</label><input type="text" id="f-video-filename" value="live_video.mp4" placeholder="live_video.mp4" /></div>
+        <div class="field" id="local-photo-field"><label>Photo filename(s) — comma-separated for slideshow</label>
+          <div class="field-with-browse"><input type="text" id="f-photo-filename" value="live_photo.jpg" placeholder="live_photo.jpg, photo2.jpg" />
+            <button class="btn btn-ghost btn-icon browse-btn" type="button" title="Browse uploaded photos" onclick="openPicker('photo','f-photo-filename')"><i data-lucide="folder-search"></i></button></div>
+        </div>
+        <div class="field" id="local-video-field"><label>Video filename</label>
+          <div class="field-with-browse"><input type="text" id="f-video-filename" value="live_video.mp4" placeholder="live_video.mp4" />
+            <button class="btn btn-ghost btn-icon browse-btn" type="button" title="Browse uploaded videos" onclick="openPicker('video','f-video-filename')"><i data-lucide="folder-search"></i></button></div>
+        </div>
       </div>
       <div id="drive-fields" style="display:none;margin-top:.75rem">
         <div class="field" id="drive-photo-field"><label>Photo Drive URL</label><input type="url" id="f-photo-drive-url" placeholder="https://drive.google.com/file/d/.../view" /></div>
@@ -420,6 +500,32 @@ dialog::backdrop{background:rgba(15,23,42,.45);backdrop-filter:blur(3px)}
         <div class="switch" id="ambient-switch"></div>
       </div>
       <div class="hint" style="margin-top:.5rem">ASMR mixes a continuous low-pass engine rumble (anoisesrc brown) with street air (anoisesrc pink) and gated distant horns (aevalsrc LFO), generated natively in FFmpeg via amix filtergraph.</div>
+    </div>
+
+    <!-- Noise filter profile picker — many filters, preview in UI before selecting -->
+    <div class="ctrl-card" id="noise-picker-card">
+      <div class="ctrl-head"><span class="ci"><i data-lucide="sliders"></i></span><span class="ct">Ambient noise filter</span><span class="cs on" id="noise-status"><span class="dot"></span> <span id="noise-status-label">Road / street ASMR</span></span></div>
+      <div class="hint">Tap the small play icon to preview a filter in your browser before selecting it. Tap the card itself to select. This only applies while "Natural road / street ASMR" above is on — otherwise an inaudible quiet floor is used.</div>
+      <div class="noise-grid" id="noise-grid"></div>
+    </div>
+
+    <!-- Custom audio — upload from gallery, on/off, single or multi-file, loops -->
+    <div class="ctrl-card" id="custom-audio-card">
+      <div class="ctrl-head"><span class="ci"><i data-lucide="music-4"></i></span><span class="ct">Custom audio track</span><span class="cs" id="ca-status"><span class="dot"></span> Off</span></div>
+      <div class="toggle-row" onclick="toggleCustomAudio()" tabindex="0">
+        <span class="ti"><i data-lucide="disc-3"></i></span>
+        <div><div class="tt">Use my own audio instead of a noise filter</div><div class="td" id="ca-desc">Off — noise filter above is used</div></div>
+        <div class="switch" id="ca-switch"></div>
+      </div>
+      <div id="ca-fields" style="display:none;margin-top:.75rem">
+        <div class="hint" style="margin-bottom:.5rem">Upload one or several tracks from your gallery or files. They play back-to-back and loop for the entire stream — no manual timing needed.</div>
+        <div class="field-with-browse">
+          <input type="file" id="ca-file-input" accept="audio/*" multiple style="display:none" onchange="onAudioFilesPicked(event)" />
+          <button class="btn btn-ghost btn-sm" type="button" onclick="document.getElementById('ca-file-input').click()"><i data-lucide="upload-cloud"></i> Upload new audio (single or multiple)</button>
+          <button class="btn btn-ghost btn-icon browse-btn" type="button" title="Browse already-uploaded audio" onclick="openPicker('audio','ca-selected-list')"><i data-lucide="folder-search"></i></button>
+        </div>
+        <div class="audio-chips" id="ca-selected-list"></div>
+      </div>
     </div>
 
     <!-- Format + timing -->
@@ -531,19 +637,45 @@ const LS_FORM='sa_form_ultimate';
 const MAX_DURATION_MIN=345;
 const MAX_UPLOAD_BYTES=200*1024*1024;   // 200 MB collective cap
 const POLL_MS=8000, POLL_MS_MAX=60000, POLL_BACKOFF=1.6, FIND_RUN_RETRIES=20;
-const ASSET_EXT=['jpg','jpeg','png','webp','gif','bmp','mp4','mov','webm','mkv','m4v'];
+const IMG_EXT=['jpg','jpeg','png','webp','gif','bmp'];
+const VID_EXT=['mp4','mov','webm','mkv','m4v'];
+const AUD_EXT=['mp3','wav','m4a','aac','ogg','flac','opus'];
+const ASSET_EXT=[...IMG_EXT,...VID_EXT,...AUD_EXT];
+
+/* Noise/ambience filter catalogue — MUST mirror the profile keys built
+   server-side in run_stream.yml (NOISE_PROFILES dict). Preview is an
+   in-browser Web Audio approximation so users can audition before
+   picking; the actual broadcast audio is generated natively by FFmpeg. */
+const NOISE_PROFILES=[
+  {key:'quiet',label:'Quiet floor',desc:'Inaudible white-noise floor (platform-safe)',icon:'volume-x'},
+  {key:'road_asmr',label:'Road / street ASMR',desc:'Engine rumble + street air + distant horns',icon:'car'},
+  {key:'rain',label:'Rain',desc:'Steady rainfall with a low rumble bed',icon:'cloud-rain'},
+  {key:'cafe',label:'Café ambience',desc:'Chatter murmur + room tone + cup clinks',icon:'coffee'},
+  {key:'forest',label:'Forest',desc:'Wind through leaves + distant birds',icon:'trees'},
+  {key:'ocean',label:'Ocean waves',desc:'Rolling surf with slow swell',icon:'waves'},
+  {key:'white_noise',label:'White noise',desc:'Flat full-spectrum noise',icon:'radio'},
+  {key:'pink_noise',label:'Pink noise',desc:'Softer, bass-weighted noise',icon:'radio'},
+  {key:'brown_noise',label:'Brown noise',desc:'Deep, rumbling low noise',icon:'radio'},
+  {key:'wind',label:'Wind',desc:'Gusting wind with slow sway',icon:'wind'},
+  {key:'fireplace',label:'Fireplace',desc:'Crackling fire bed with pops',icon:'flame'},
+  {key:'office_hum',label:'Office hum',desc:'Fluorescent/AC hum + room floor',icon:'building-2'},
+];
 
 const S={
   cfg:null, streams:{}, polls:{}, timers:{}, findJobs:{}, _inflight:{},
   platform:'youtube', ratio:'9:16', assetMode:'photo_video', driveMode:false, ambientAudio:false,
-  editId:null, restartId:null, uploads:[],
+  noiseProfile:'road_asmr', customAudioEnabled:false, customAudioFiles:[],
+  editId:null, restartId:null, uploads:[], audioUploads:[],
+  repoAssets:{photo:[],video:[],audio:[]}, pickerType:'photo', pickerSel:[], pickerTarget:null,
+  _previewCtx:null, _previewNodes:[], _previewKey:null,
 };
 
 /* ---------------- init ---------------- */
 function icons(){ if(window.lucide) lucide.createIcons(); }
 window.addEventListener('DOMContentLoaded',()=>{
   S.cfg=loadCfg(); S.streams=loadStreams();
-  updateCfgUI(); restoreFormDefaults(); renderAll(); initDropzone();
+  updateCfgUI(); renderNoiseGrid(); restoreFormDefaults(); renderAll(); initDropzone();
+  renderAudioList(); syncNoiseCardEnabled();
   if(S.cfg) scanRepoAssets();
   Object.keys(S.streams).forEach(id=>{
     const s=S.streams[id];
@@ -626,22 +758,87 @@ function toggleVis(id){
 }
 
 /* ---------------- repository asset scan ---------------- */
-async function scanRepoAssets(){
+async function scanRepoAssets(fromPicker){
   const badge=document.getElementById('asset-badge');
   if(!S.cfg||!S.cfg.token){ return; }
   const {owner,repo}=S.cfg;
-  badge.innerHTML='<i data-lucide="loader" class="spin"></i> Scanning assets…'; icons();
+  if(badge){ badge.innerHTML='<i data-lucide="loader" class="spin"></i> Scanning assets…'; icons(); }
   try{
     const res=await ghFetch(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/`);
-    if(!res.ok){ badge.innerHTML=`<i data-lucide="alert-triangle"></i> Scan failed (${res.status})`; icons(); return; }
+    if(!res.ok){ if(badge){badge.innerHTML=`<i data-lucide="alert-triangle"></i> Scan failed (${res.status})`; icons();} return; }
     const items=await res.json();
-    const assets=(Array.isArray(items)?items:[]).filter(f=>f.type==='file'&&ASSET_EXT.includes((f.name.split('.').pop()||'').toLowerCase()));
-    const imgs=assets.filter(f=>['jpg','jpeg','png','webp','gif','bmp'].includes((f.name.split('.').pop()||'').toLowerCase())).length;
-    const vids=assets.length-imgs;
-    badge.innerHTML=`<i data-lucide="database"></i> ${imgs} image(s) · ${vids} video(s) in repo`;
-    badge.title=`Scanned ${owner}/${repo} root at ${new Date().toLocaleTimeString()}`;
-  }catch(err){ badge.innerHTML=`<i data-lucide="wifi-off"></i> Scan error`; }
+    const files=(Array.isArray(items)?items:[]).filter(f=>f.type==='file');
+    const extOf=f=>(f.name.split('.').pop()||'').toLowerCase();
+    S.repoAssets={
+      photo:files.filter(f=>IMG_EXT.includes(extOf(f))).map(f=>({name:f.name,size:f.size})),
+      video:files.filter(f=>VID_EXT.includes(extOf(f))).map(f=>({name:f.name,size:f.size})),
+      audio:files.filter(f=>AUD_EXT.includes(extOf(f))).map(f=>({name:f.name,size:f.size})),
+    };
+    if(badge){
+      const {photo,video,audio}=S.repoAssets;
+      badge.innerHTML=`<i data-lucide="database"></i> ${photo.length} image(s) · ${video.length} video(s) · ${audio.length} audio in repo`;
+      badge.title=`Scanned ${owner}/${repo} root at ${new Date().toLocaleTimeString()}`;
+    }
+    if(fromPicker) renderPickerList();
+  }catch(err){ if(badge){badge.innerHTML=`<i data-lucide="wifi-off"></i> Scan error`; icons();} }
+  if(badge) icons();
+}
+
+/* ---------------- asset picker (browse repo, select without retyping) ---------------- */
+function openPicker(type,targetId){
+  if(!S.cfg){ toast('Configure GitHub first','err'); openCfg(); return; }
+  S.pickerTarget=targetId; S.pickerSel=[];
+  setPickerTab(type);
+  document.getElementById('dlg-picker').showModal(); icons();
+  if(!S.repoAssets.photo.length&&!S.repoAssets.video.length&&!S.repoAssets.audio.length) scanRepoAssets(true);
+}
+function setPickerTab(type){
+  S.pickerType=type; S.pickerSel=[];
+  ['photo','video','audio'].forEach(t=>document.getElementById(`ptab-${t}`).classList.toggle('on',t===type));
+  const hints={photo:'Tap one or more photos — they play as a slideshow in the order shown.',
+    video:'Tap a single video for the live feed.',
+    audio:'Tap one or more audio tracks — they loop back-to-back for the whole stream.'};
+  document.getElementById('picker-hint').textContent=hints[type];
+  renderPickerList();
+}
+function renderPickerList(){
+  const list=document.getElementById('picker-list'); if(!list) return;
+  const items=S.repoAssets[S.pickerType]||[];
+  if(!items.length){ list.innerHTML='<div class="picker-empty">No files of this type in the repository yet. Upload some from the cloud-upload button first.</div>'; return; }
+  const icon=S.pickerType==='photo'?'image':S.pickerType==='video'?'film':'music';
+  list.innerHTML=items.map(f=>`
+    <div class="picker-item ${S.pickerSel.includes(f.name)?'sel':''}" onclick="togglePickerItem('${esc(f.name)}')">
+      <i data-lucide="${icon}"></i><span class="pn">${esc(f.name)}</span><span class="psz">${fmtBytes(f.size||0)}</span>
+      ${S.pickerSel.includes(f.name)?'<i data-lucide="check-circle"></i>':''}
+    </div>`).join('');
   icons();
+}
+function togglePickerItem(name){
+  if(S.pickerType==='video'){ S.pickerSel=[name]; }
+  else{
+    const i=S.pickerSel.indexOf(name);
+    if(i>=0) S.pickerSel.splice(i,1); else S.pickerSel.push(name);
+  }
+  renderPickerList();
+}
+function confirmPicker(){
+  if(!S.pickerSel.length){ toast('Select at least one file','warn'); document.getElementById('dlg-picker').close(); return; }
+  if(S.pickerTarget==='ca-selected-list'){
+    S.pickerSel.forEach(name=>{ if(!S.customAudioFiles.includes(name)) S.customAudioFiles.push(name); });
+    renderAudioList();
+  }else{
+    const input=document.getElementById(S.pickerTarget);
+    if(input){
+      if(S.pickerType==='video'){ input.value=S.pickerSel[0]; }
+      else{
+        const existing=input.value.split(',').map(s=>s.trim()).filter(Boolean);
+        S.pickerSel.forEach(name=>{ if(!existing.includes(name)) existing.push(name); });
+        input.value=existing.join(', ');
+      }
+    }
+  }
+  document.getElementById('dlg-picker').close();
+  toast(`${S.pickerSel.length} file(s) applied`,'ok');
 }
 
 /* ---------------- multi-file upload ---------------- */
@@ -765,6 +962,152 @@ function toggleAmbient(){
   S.ambientAudio=!S.ambientAudio;
   document.getElementById('ambient-switch').classList.toggle('on',S.ambientAudio);
   document.getElementById('ambient-desc').textContent=S.ambientAudio?'On — natural road / street ASMR bed':'Off — inaudible white-noise floor (platform-safe)';
+  syncNoiseCardEnabled();
+}
+function syncNoiseCardEnabled(){
+  const card=document.getElementById('noise-picker-card'); if(!card) return;
+  card.style.opacity=S.ambientAudio?'1':'.5';
+  card.style.pointerEvents=S.ambientAudio?'':'none';
+}
+
+/* ---------------- noise profile picker + client-side preview ---------------- */
+function renderNoiseGrid(){
+  const grid=document.getElementById('noise-grid'); if(!grid) return;
+  grid.innerHTML=NOISE_PROFILES.map(p=>`
+    <div class="noise-card ${S.noiseProfile===p.key?'on':''}" id="noise-${p.key}" onclick="selectNoiseProfile('${p.key}')">
+      <span class="ni"><i data-lucide="${p.icon}"></i></span>
+      <div class="nt"><div class="nn">${esc(p.label)}</div><div class="nd">${esc(p.desc)}</div></div>
+      <span class="np" id="np-${p.key}" onclick="event.stopPropagation();previewNoise('${p.key}')" title="Preview"><i data-lucide="play"></i></span>
+    </div>`).join('');
+  icons();
+}
+function selectNoiseProfile(key){
+  S.noiseProfile=key;
+  document.querySelectorAll('.noise-card').forEach(c=>c.classList.remove('on'));
+  const el=document.getElementById(`noise-${key}`); if(el) el.classList.add('on');
+  const st=document.getElementById('noise-status-label');
+  const p=NOISE_PROFILES.find(x=>x.key===key);
+  if(st&&p) st.textContent=p.label;
+}
+/* Web Audio API approximation of each server-side lavfi filtergraph, purely
+   for in-browser preview before dispatching — the real broadcast audio is
+   generated natively inside FFmpeg on the GitHub Actions runner. */
+function stopPreview(){
+  if(S._previewNodes.length) S._previewNodes.forEach(n=>{ try{n.stop&&n.stop();}catch(_){} });
+  S._previewNodes=[];
+  if(S._previewKey){ const b=document.getElementById(`np-${S._previewKey}`); if(b){ b.classList.remove('playing'); b.innerHTML='<i data-lucide="play"></i>'; icons(); } }
+  S._previewKey=null;
+}
+function makeNoiseBuffer(ctx,seconds,gen){
+  const len=Math.floor(ctx.sampleRate*seconds);
+  const buf=ctx.createBuffer(2,len,ctx.sampleRate);
+  for(let ch=0;ch<2;ch++){ const d=buf.getChannelData(ch); for(let i=0;i<len;i++) d[i]=gen(i/ctx.sampleRate,ch); }
+  return buf;
+}
+function previewNoise(key){
+  if(S._previewKey===key){ stopPreview(); return; }
+  stopPreview();
+  try{
+    const ctx=S._previewCtx||(S._previewCtx=new (window.AudioContext||window.webkitAudioContext)());
+    if(ctx.state==='suspended') ctx.resume();
+    const master=ctx.createGain(); master.gain.value=0.5; master.connect(ctx.destination);
+    let prevRand=0;
+    const white=()=>Math.random()*2-1;
+    const brown=(state)=>{ const v=(state.v=(state.v||0)*0.98+white()*0.06); return Math.max(-1,Math.min(1,v*3.2)); };
+    const pink=(state)=>{ // simple Paul Kellet pink noise approximation
+      state.b0=state.b0||0;state.b1=state.b1||0;state.b2=state.b2||0;
+      const w=white(); state.b0=0.99765*state.b0+w*0.0990460; state.b1=0.96300*state.b1+w*0.2965164; state.b2=0.57000*state.b2+w*1.0526913;
+      return (state.b0+state.b1+state.b2+w*0.1848)*0.11;
+    };
+    const st={}; const dur=4;
+    let gen;
+    switch(key){
+      case 'quiet': gen=()=>white()*0.01; break;
+      case 'road_asmr': gen=(t)=>brown(st)*0.5+pink(st)*0.15+ (Math.sin(2*Math.PI*277*t)*0.05*Math.max(0,Math.sin(2*Math.PI*0.4*t))); break;
+      case 'rain': gen=()=>white()*0.28+brown(st)*0.08; break;
+      case 'cafe': gen=(t)=>pink(st)*0.3+Math.sin(2*Math.PI*440*t)*0.02*Math.max(0,Math.sin(2*Math.PI*1.3*t)); break;
+      case 'forest': gen=(t)=>pink(st)*0.18+Math.sin(2*Math.PI*2600*t)*0.04*Math.max(0,Math.sin(2*Math.PI*0.6*t)); break;
+      case 'ocean': gen=(t)=>white()*0.3*(0.6+0.4*Math.sin(2*Math.PI*0.12*t)); break;
+      case 'white_noise': gen=()=>white()*0.22; break;
+      case 'pink_noise': gen=()=>pink(st)*0.5; break;
+      case 'brown_noise': gen=()=>brown(st)*0.6; break;
+      case 'wind': gen=(t)=>white()*0.22*(0.5+0.5*Math.sin(2*Math.PI*0.08*t)); break;
+      case 'fireplace': gen=(t)=>pink(st)*0.14+((Math.random()<0.004)?(white()*0.9):0); break;
+      case 'office_hum': gen=(t)=>Math.sin(2*Math.PI*60*t)*0.06+Math.sin(2*Math.PI*120*t)*0.02+white()*0.01; break;
+      default: gen=()=>white()*0.05;
+    }
+    const buf=makeNoiseBuffer(ctx,dur,gen);
+    const src=ctx.createBufferSource(); src.buffer=buf; src.loop=true;
+    const lp=ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value= key==='white_noise'?18000:6000;
+    src.connect(lp); lp.connect(master); src.start();
+    S._previewNodes=[src]; S._previewKey=key;
+    const btn=document.getElementById(`np-${key}`); if(btn){ btn.classList.add('playing'); btn.innerHTML='<i data-lucide="square"></i>'; icons(); }
+    setTimeout(()=>{ if(S._previewKey===key) stopPreview(); },6000);
+  }catch(err){ toast('Preview unavailable in this browser','warn'); }
+}
+
+/* ---------------- custom audio (gallery upload, on/off, loops) ---------------- */
+function toggleCustomAudio(){
+  S.customAudioEnabled=!S.customAudioEnabled;
+  document.getElementById('ca-switch').classList.toggle('on',S.customAudioEnabled);
+  document.getElementById('ca-desc').textContent=S.customAudioEnabled?'On — uploaded track(s) loop for the whole stream':'Off — noise filter above is used';
+  document.getElementById('ca-fields').style.display=S.customAudioEnabled?'':'none';
+  const st=document.getElementById('ca-status');
+  st.className='cs'+(S.customAudioEnabled?' on':''); st.innerHTML=`<span class="dot"></span> ${S.customAudioEnabled?'On':'Off'}`;
+}
+function onAudioFilesPicked(e){
+  const arr=Array.from(e.target.files||[]);
+  for(const f of arr){
+    const ext=(f.name.split('.').pop()||'').toLowerCase();
+    if(!AUD_EXT.includes(ext)){ toast(`Skipped ${f.name} — not a recognised audio type`,'warn'); continue; }
+    if(S.audioUploads.some(u=>u.file.name===f.name&&u.file.size===f.size)) continue;
+    S.audioUploads.push({file:f,status:'pending'});
+  }
+  e.target.value='';
+  commitAudioUploads();
+}
+async function commitAudioUploads(){
+  if(!S.cfg){ toast('Configure GitHub first','err'); return; }
+  const {owner,repo}=S.cfg;
+  for(const u of S.audioUploads){
+    if(u.status==='done') continue;
+    u.status='uploading'; renderAudioList();
+    try{
+      const b64=await fileToBase64(u.file);
+      const path=encodeURIComponent(u.file.name);
+      let sha=null;
+      const head=await ghFetch(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path}`);
+      if(head.ok){ const j=await head.json(); sha=j.sha; }
+      const res=await ghFetch(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path}`,{
+        method:'PUT', body:JSON.stringify({message:`StreamAdda audio upload: ${u.file.name}`,content:b64,...(sha?{sha}:{})}),
+      });
+      if(!res.ok){ const e=await res.json().catch(()=>({})); throw new Error(e.message||('HTTP '+res.status)); }
+      u.status='done';
+      if(!S.customAudioFiles.includes(u.file.name)) S.customAudioFiles.push(u.file.name);
+      toast(`Uploaded ${u.file.name}`,'ok');
+    }catch(err){ u.status='error'; toast(`Audio upload failed: ${u.file.name} — ${err.message}`,'err'); }
+    renderAudioList();
+  }
+  scanRepoAssets();
+}
+function removeSelectedAudio(name){
+  S.customAudioFiles=S.customAudioFiles.filter(n=>n!==name);
+  renderAudioList();
+}
+function renderAudioList(){
+  const list=document.getElementById('ca-selected-list'); if(!list) return;
+  if(!S.customAudioFiles.length && !S.audioUploads.length){
+    list.innerHTML='<div class="hint">No audio track selected yet.</div>'; return;
+  }
+  const uploadingChips=S.audioUploads.filter(u=>u.status!=='done').map(u=>{
+    const st=u.status==='uploading'?'<i data-lucide="loader" class="spin"></i>':u.status==='error'?'<span class="astat" style="color:var(--danger)">Failed</span>':'';
+    return `<div class="audio-chip"><i data-lucide="music"></i><span class="an">${esc(u.file.name)}</span>${st}</div>`;
+  }).join('');
+  const selChips=S.customAudioFiles.map(name=>`
+    <div class="audio-chip"><i data-lucide="music"></i><span class="an">${esc(name)}</span><span class="astat">Selected</span>
+      <span class="ax" onclick="removeSelectedAudio('${esc(name)}')"><i data-lucide="x"></i></span></div>`).join('');
+  list.innerHTML=uploadingChips+selChips||'<div class="hint">No audio track selected yet.</div>';
+  icons();
 }
 function setRatio(r){
   S.ratio=r;
@@ -787,7 +1130,8 @@ function saveFormToStorage(){
     photoFilename:document.getElementById('f-photo-filename').value,videoFilename:document.getElementById('f-video-filename').value,
     photoDriveUrl:document.getElementById('f-photo-drive-url').value,videoDriveUrl:document.getElementById('f-video-drive-url').value,
     dur:document.getElementById('f-dur').value,ytvid:document.getElementById('f-ytvid').value,
-    platform:S.platform,ratio:S.ratio,assetMode:S.assetMode,driveMode:S.driveMode,ambientAudio:S.ambientAudio};
+    platform:S.platform,ratio:S.ratio,assetMode:S.assetMode,driveMode:S.driveMode,ambientAudio:S.ambientAudio,
+    noiseProfile:S.noiseProfile,customAudioEnabled:S.customAudioEnabled,customAudioFiles:S.customAudioFiles};
   localStorage.setItem(LS_FORM,JSON.stringify(data));
 }
 function restoreFormDefaults(){
@@ -800,6 +1144,9 @@ function restoreFormDefaults(){
     setVal('f-dur',d.dur||'60'); setVal('f-ytvid',d.ytvid);
     setPlatform(d.platform||'youtube'); setRatio(d.ratio||'9:16'); setMode(d.assetMode||'photo_video');
     if(d.driveMode) toggleDriveMode(); if(d.ambientAudio) toggleAmbient();
+    selectNoiseProfile(d.noiseProfile||'road_asmr');
+    S.customAudioFiles=Array.isArray(d.customAudioFiles)?d.customAudioFiles:[];
+    if(d.customAudioEnabled) toggleCustomAudio();
   }catch(_){ setMode('photo_video'); }
 }
 function setVal(id,v){ if(v!=null) document.getElementById(id).value=v; }
@@ -828,7 +1175,9 @@ function buildConfigBundle(s){
     stream_key:s.streamKey||'', total_minutes:String(s.durationMin||60), ratio:s.ratio, platform:s.platform,
     asset_mode:s.assetMode, drive_mode:String(!!s.driveMode), photo_filename:s.photoFilename||'live_photo.jpg',
     video_filename:s.videoFilename||'live_video.mp4', photo_drive_url:s.photoDriveUrl||'', video_drive_url:s.videoDriveUrl||'',
-    ambient_audio:String(!!s.ambientAudio), stream_name:s.name, backup_rtmp:s.backupRtmp||'',
+    ambient_audio:String(!!s.ambientAudio), noise_profile:s.noiseProfile||'road_asmr',
+    custom_audio_enabled:String(!!s.customAudioEnabled), custom_audio_files:(s.customAudioFiles||[]).join(','),
+    stream_name:s.name, backup_rtmp:s.backupRtmp||'',
     youtube_video_id:s.ytVideoId||'', start_at:s.startAt||'', stop_at:s.stopAt||'',
   })};
 }
@@ -860,8 +1209,10 @@ async function submitStream(event){
   }
   let ytVideoId=ytvid; const m=ytvid.match(/(?:youtu\.be\/|v=)([\w-]{11})/); if(m) ytVideoId=m[1];
 
+  if(S.customAudioEnabled&&!S.customAudioFiles.length){ toast('Custom audio is on but no track is selected','err'); return; }
   const payload=buildConfigBundle({streamKey:key,durationMin:dur,ratio:S.ratio,platform:S.platform,assetMode:S.assetMode,
     driveMode:S.driveMode,photoFilename,videoFilename,photoDriveUrl,videoDriveUrl,ambientAudio:S.ambientAudio,
+    noiseProfile:S.noiseProfile,customAudioEnabled:S.customAudioEnabled,customAudioFiles:S.customAudioFiles,
     name,backupRtmp:backup,ytVideoId,startAt,stopAt});
   saveFormToStorage();
 
@@ -872,8 +1223,9 @@ async function submitStream(event){
   catch(err){
     const failId=genId();
     S.streams[failId]={id:failId,name,platform:S.platform,ratio:S.ratio,assetMode:S.assetMode,driveMode:S.driveMode,
-      ambientAudio:S.ambientAudio,durationMin:dur,startAt,stopAt,ytVideoId,dispatchedAt,startedAt:null,runId:null,runUrl:null,jobId:null,
-      status:'failed',phase:'failed',frameCount:0,telemetry:null,failReason:err.message,rawFfmpegLines:[],
+      ambientAudio:S.ambientAudio,noiseProfile:S.noiseProfile,customAudioEnabled:S.customAudioEnabled,customAudioFiles:[...S.customAudioFiles],
+      durationMin:dur,startAt,stopAt,ytVideoId,dispatchedAt,startedAt:null,runId:null,runUrl:null,jobId:null,
+      status:'failed',phase:'failed',frameCount:0,telemetry:null,failReason:err.message,rawFfmpegLines:[],errLines:[],
       logLines:[`[${ts()}] Dispatch to GitHub Actions FAILED`,`[${ts()}] Reason: ${err.message}`],lastPollAt:null,pollFailCount:0,
       stopPending:false,stopCountdown:0};
     persistStreams(); renderAll(); toast(`Dispatch failed: ${err.message}`,'err');
@@ -881,9 +1233,10 @@ async function submitStream(event){
   }
   const id=genId();
   S.streams[id]={id,name,platform:S.platform,ratio:S.ratio,assetMode:S.assetMode,driveMode:S.driveMode,ambientAudio:S.ambientAudio,
+    noiseProfile:S.noiseProfile,customAudioEnabled:S.customAudioEnabled,customAudioFiles:[...S.customAudioFiles],
     streamKey:key,backupRtmp:backup,photoFilename,videoFilename,photoDriveUrl,videoDriveUrl,durationMin:dur,startAt,stopAt,ytVideoId,
     dispatchedAt,startedAt:null,runId:null,runUrl:null,jobId:null,status:startAt?'scheduled':'starting',phase:'connecting',
-    frameCount:0,telemetry:null,rawFfmpegLines:[],logLines:[`[${ts()}] Stream dispatched to GitHub Actions`],
+    frameCount:0,telemetry:null,rawFfmpegLines:[],errLines:[],logLines:[`[${ts()}] Stream dispatched to GitHub Actions`],
     lastPollAt:null,pollFailCount:0,stopPending:false,stopCountdown:0};
   persistStreams();
   document.getElementById('dlg').close();
@@ -925,6 +1278,10 @@ function startFindRun(id,dispatchedAt){
 }
 
 /* ---------------- smart poller ---------------- */
+const POLL_MS_LIVE=3000; // faster "live tail" cadence once a stream is confirmed online — GitHub Actions
+                          // has no true server-push/SSE for job logs, so this fast poll is the closest
+                          // approximation of a realtime feed the browser can get from the REST API.
+function pollIntervalFor(s){ return s&&s.status==='online'?POLL_MS_LIVE:POLL_MS; }
 function stopPoll(id){ if(S.polls[id]){ clearTimeout(S.polls[id]); S.polls[id]=null; } }
 function startPoll(id){
   if(S.polls[id]) return;
@@ -932,14 +1289,14 @@ function startPoll(id){
     const s=S.streams[id];
     if(!s){ stopPoll(id); return; }
     if(['offline','failed','finished'].includes(s.status)){ stopPoll(id); return; }
-    if(S._inflight[id]){ S.polls[id]=setTimeout(tick,POLL_MS); return; }
+    if(S._inflight[id]){ S.polls[id]=setTimeout(tick,pollIntervalFor(s)); return; }
     S._inflight[id]=true; s.lastPollAt=new Date().toISOString();
-    let nextDelay=POLL_MS;
+    let nextDelay=pollIntervalFor(s);
     try{ await pollStep(id); s.pollFailCount=0; }
     catch(err){
       s.pollFailCount=(s.pollFailCount||0)+1;
       const msg=err&&err.message?err.message:String(err);
-      nextDelay=Math.min(POLL_MS_MAX,Math.round(POLL_MS*Math.pow(POLL_BACKOFF,s.pollFailCount)));
+      nextDelay=Math.min(POLL_MS_MAX,Math.round(pollIntervalFor(s)*Math.pow(POLL_BACKOFF,s.pollFailCount)));
       if(msg.includes('429')||msg.includes('403')) addLog(id,`GitHub API limit — backing off ${Math.round(nextDelay/1000)}s`);
       else addLog(id,`Poll retry in ${Math.round(nextDelay/1000)}s (${msg})`);
     }finally{ S._inflight[id]=false; }
@@ -948,7 +1305,7 @@ function startPoll(id){
     if(cur&&!['offline','failed','finished'].includes(cur.status)) S.polls[id]=setTimeout(tick,nextDelay);
     else stopPoll(id);
   };
-  S.polls[id]=setTimeout(tick,POLL_MS);
+  S.polls[id]=setTimeout(tick,pollIntervalFor(S.streams[id]));
 }
 async function pollStep(id){
   const s=S.streams[id];
@@ -973,6 +1330,7 @@ async function pollStep(id){
   parseStatusMarkers(id,logText);
   parseTelemetry(id,logText);
   parseFfmpegRawLines(id,logText);
+  parseErrorLines(id,logText);
   const lines=logText.split('\n').map(l=>l.replace(/\r/g,''));
   const recent=lines.filter(l=>l.includes('[SA]')||l.includes('[SA_STATUS')||l.includes('[SA_TELEMETRY]')).slice(-10);
   if(recent.length){
@@ -1002,9 +1360,40 @@ function parseFfmpegRawLines(id, logText){
     })
     .filter(Boolean);
   if(rawLines.length){
-    // Keep last 200 raw lines (enough to capture encoder init + live telemetry)
-    s.rawFfmpegLines=rawLines.slice(-200);
+    // Keep last 500 raw lines — the "100% full" live tail card intentionally
+    // keeps a much bigger scrollback than the compact telemetry/engine cards.
+    s.rawFfmpegLines=rawLines.slice(-500);
   }
+}
+
+/* Dedicated error/warning feed — a SEPARATE live card from the raw FFmpeg
+   tail above. Scans the ENTIRE job log (not just [SA_FFMPEG_RAW]-tagged
+   lines) so GitHub Actions step failures, ##[error]/##[warning] annotations,
+   RTMP/handshake failures and raw FFmpeg stderr error text all surface here
+   too — every failure, in one place, per stream. */
+const ERR_PATTERNS=/error|failed|failure|refused|timed? ?out|denied|fatal|cannot|unable to|invalid|exception|traceback|broken pipe|connection reset|no route to host/i;
+const WARN_PATTERNS=/warn|deprecat|retry|non-monotonic|discontinuity|dropped|late frame|buffer(?:ing)? underrun/i;
+function parseErrorLines(id, logText){
+  const s=S.streams[id]; if(!s) return;
+  const out=[];
+  for(let raw of logText.split('\n')){
+    let l=raw.replace(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s+/,'').trim();
+    if(!l) continue;
+    let level=null;
+    if(/^##\[error\]/i.test(l)){ level='err'; l=l.replace(/^##\[error\]/i,'').trim(); }
+    else if(/^##\[warning\]/i.test(l)){ level='warn'; l=l.replace(/^##\[warning\]/i,'').trim(); }
+    else if(l.includes('[SA_STATUS:FAILED')){ level='err'; }
+    else if(l.includes('[SA_FFMPEG_RAW]')){
+      const body=l.replace('[SA_FFMPEG_RAW] ','').replace('[SA_FFMPEG_RAW]','').trim();
+      if(ERR_PATTERNS.test(body)) level='err';
+      else if(WARN_PATTERNS.test(body)) level='warn';
+      if(level) l=body;
+    }
+    else if(l.startsWith('WARN [SA]')) level='warn';
+    else if(ERR_PATTERNS.test(l)&&l.includes('[SA]')) level='err';
+    if(level) out.push({level,text:l.slice(0,300)});
+  }
+  if(out.length) s.errLines=out.slice(-150);
 }
 
 function parseStatusMarkers(id,logText){
@@ -1161,7 +1550,7 @@ async function confirmRestart(event){
   const id=S.restartId; const s=S.streams[id]; if(!s){ document.getElementById('dlg-restart').close(); return; }
   let mins=Math.max(2,Math.min(MAX_DURATION_MIN,parseInt(document.getElementById('r-min').value,10)||60));
   s.durationMin=mins; s.startAt='';
-  s.stopPending=false; s.stopCountdown=0; s.rawFfmpegLines=[];
+  s.stopPending=false; s.stopCountdown=0; s.rawFfmpegLines=[]; s.errLines=[];
   persistStreams(); document.getElementById('dlg-restart').close();
   toast(`Restarting ${s.name} for ${mins} min…`,'inf');
   try{ await dispatchForExistingStream(id); }
@@ -1175,7 +1564,7 @@ async function dispatchForExistingStream(id){
   stopPoll(id); if(S.findJobs[id]){ clearInterval(S.findJobs[id]); S.findJobs[id]=null; } stopTimer(id);
   const dispatchedAt=new Date().toISOString();
   Object.assign(s,{runId:null,runUrl:null,jobId:null,startedAt:null,frameCount:0,telemetry:null,pollFailCount:0,dispatchedAt,
-    status:s.startAt?'scheduled':'starting',phase:'connecting',rawFfmpegLines:[],stopPending:false,stopCountdown:0});
+    status:s.startAt?'scheduled':'starting',phase:'connecting',rawFfmpegLines:[],errLines:[],stopPending:false,stopCountdown:0});
   addLog(id,`Re-dispatching (${s.durationMin} min)…`); persistStreams(); renderCard(id);
   await dispatchWorkflow(buildConfigBundle(s));
   addLog(id,'Re-dispatched — locating new run…');
@@ -1260,148 +1649,4 @@ function buildCard(id){
     // Muxer / RTMP / flv output lines
     if(/flv|rtmp|RTMP|mux|Mux|FLV|Opening|Press/.test(l)) return `<span class="fr-mux">${esc(l)}</span>`;
     // Error lines
-    if(/error|Error|failed|Failed|refused|timed out/i.test(l)) return `<span class="fr-err">${esc(l)}</span>`;
-    // Warning lines
-    if(/warning|Warning|warn|WARN|deprecated/i.test(l)) return `<span class="fr-warn">${esc(l)}</span>`;
-    // Default
-    return `<span>${esc(l)}</span>`;
-  }).join('');
-
-  const runLink=s.runUrl?`<a href="${esc(s.runUrl)}" target="_blank" rel="noopener" style="font-size:11px">View run</a>`:'';
-
-  // Stop-pending panel: 10s countdown + Dismiss button
-  const stopPanelHtml=isStopPending?`
-  <div class="stop-panel">
-    <span class="sp-text"><i data-lucide="timer"></i>YouTube processing window — waiting for broadcast to register as Ended</span>
-    <span class="sp-cnt">${s.stopCountdown||0}s</span>
-    <button class="btn btn-ok btn-sm" onclick="dismissStream('${id}')"><i data-lucide="check-circle"></i> Dismiss</button>
-  </div>`:'';
-
-  el.innerHTML=`
-  <div class="card-body">
-    <div class="card-top">
-      <div style="flex:1;min-width:0">
-        <div class="card-title">${esc(s.name)}</div>
-        <div class="card-meta" style="margin-top:.4rem">
-          ${modeChips[s.assetMode]||''} ${driveChip} ${ambChip}
-          <span><i data-lucide="tv"></i>${esc(s.platform)}</span>
-          <span><i data-lucide="ratio"></i>${esc(s.ratio)}</span>
-        </div>
-      </div>
-      <div>${badgeHtml(s,isStopPending)}</div>
-    </div>
-
-    <div class="phase">
-      <div class="phase-row">
-        <span class="phase-lbl"><i data-lucide="${s.phase==='video'?'film':isStopPending?'square-x':'image'}"></i>
-          ${isStopPending?'Stopping…':s.phase==='video'?'Video phase':s.phase==='done'?'Completed':s.phase==='failed'?'Failed':(s.status==='starting'?'Connecting…':s.status==='scheduled'?'Scheduled':'Photo phase')}</span>
-        <span style="display:flex;align-items:center;gap:.5rem">
-          ${isLive&&!isStopPending?`<span class="phase-eta">${etaLabel}</span>`:''}
-          <span>${pct}%</span>
-        </span>
-      </div>
-      <div class="track"><div class="fill ${fillClass}" style="width:${pct}%"></div></div>
-      ${isLive&&!isStopPending?`<div style="font-size:10px;color:var(--muted);margin-top:.25rem;text-align:right">${etaHms} remaining</div>`:''}
-    </div>
-
-    <div class="telemetry">
-      <div class="metric ${isLive?'hot':''}"><div class="m-k"><i data-lucide="clock"></i>Uptime</div><div class="m-v mono">${uptime}</div></div>
-      <div class="metric"><div class="m-k"><i data-lucide="hourglass"></i>Remaining</div><div class="m-v mono">${isLive?etaHms:'--:--:--'}</div></div>
-      <div class="metric"><div class="m-k"><i data-lucide="activity"></i>Speed</div><div class="m-v mono">${esc(t.speed||'—')}</div></div>
-      <div class="metric"><div class="m-k"><i data-lucide="gauge"></i>FPS</div><div class="m-v mono">${esc(t.fps||'—')}</div></div>
-      <div class="metric"><div class="m-k"><i data-lucide="wifi"></i>Bitrate</div><div class="m-v mono">${esc(t.bitrate||'—')}</div></div>
-      <div class="metric"><div class="m-k"><i data-lucide="layers"></i>Frames</div><div class="m-v mono">${s.frameCount?s.frameCount.toLocaleString():'—'}</div></div>
-    </div>
-
-    <div class="finish"><i data-lucide="calendar"></i>Dispatched ${timeAgo(s.dispatchedAt)}${s.startedAt?' · live since '+new Date(s.startedAt).toLocaleTimeString():''}${runLink?' · '+runLink:''}</div>
-
-    <hr class="divider" />
-
-    <div class="actions">
-      ${!isStopPending&&(s.status==='online'||s.status==='starting'||s.status==='scheduled')?`<button class="btn btn-danger btn-sm" onclick="stopStream('${id}')"><i data-lucide="square"></i> Stop</button>`:''}
-      ${isStopPending?`<button class="btn btn-ok btn-sm" onclick="dismissStream('${id}')"><i data-lucide="check-circle"></i> Dismiss</button>`:''}
-      ${!isStopPending&&['finished','offline','failed'].includes(s.status)?`<button class="btn btn-primary btn-sm" onclick="openRestart('${id}')"><i data-lucide="rotate-ccw"></i> Restart</button>`:''}
-      <button class="btn btn-ghost btn-sm" onclick="openEdit('${id}')"><i data-lucide="sliders-horizontal"></i> Adjust</button>
-      ${s.ytVideoId?`<a class="btn btn-sky btn-sm" href="https://studio.youtube.com/video/${esc(s.ytVideoId)}/livestreaming" target="_blank" rel="noopener"><i data-lucide="external-link"></i> Studio</a>`:''}
-      <button class="btn btn-ghost btn-sm" style="margin-left:auto;color:var(--danger)" onclick="deleteStream('${id}')"><i data-lucide="trash-2"></i></button>
-    </div>
-
-    ${stopPanelHtml}
-
-    <!-- Engine log: light background, [SA] / [SA_STATUS] / [SA_TELEMETRY] tagged lines -->
-    <div class="logwrap" style="margin-top:.75rem">
-      <div class="logwrap-head">
-        <span class="lh"><i data-lucide="terminal"></i> Engine log${t.time?` · t=${esc(t.time)}`:''}</span>
-        <button class="btn btn-ghost btn-xs" onclick="clearLog('${id}')"><i data-lucide="eraser"></i> Clear</button>
-      </div>
-      <div class="log" id="log-${id}">${logHtml}</div>
-    </div>
-
-    <!-- FFMPEG OUTPUT: dark terminal, raw unfiltered FFmpeg stderr lines -->
-    <div class="logwrap ffterm" style="margin-top:.5rem">
-      <div class="logwrap-head">
-        <span class="lh"><i data-lucide="terminal-square"></i> FFMPEG OUTPUT
-          <span style="font-size:10px;font-weight:400;color:#4a5568;margin-left:.4rem">
-            ${rawLines.length?`(${rawLines.length} lines)`:'waiting for stream…'}
-          </span>
-        </span>
-        <button class="btn btn-ghost btn-xs" style="color:#94a3b8;border-color:#2d3748" onclick="clearRawLog('${id}')"><i data-lucide="eraser"></i> Clear</button>
-      </div>
-      <div class="log ffraw" id="rawlog-${id}">${rawHtml||'<span style="color:#4a5568">No FFmpeg output yet. Output appears once the stream starts encoding.</span>'}</div>
-    </div>
-
-  </div>`;
-  return el;
-}
-
-function badgeHtml(s, isStopPending){
-  if(isStopPending) return '<span class="badge b-stopping"><span class="d"></span>STOPPING</span>';
-  if(s.status==='online'&&s.phase==='video') return '<span class="badge b-video"><span class="d"></span>LIVE · VIDEO</span>';
-  if(s.status==='online') return '<span class="badge b-photo"><span class="d"></span>LIVE · PHOTO</span>';
-  const map={starting:['b-starting',true,'CONNECTING'],scheduled:['b-scheduled',false,'SCHEDULED'],offline:['b-offline',false,'OFFLINE'],finished:['b-finished',false,'FINISHED'],failed:['b-failed',true,'FAILED']};
-  const info=map[s.status]||map.offline;
-  return `<span class="badge ${info[0]}">${info[1]?'<span class="d"></span>':''}${info[2]}</span>`;
-}
-function statusCardClass(st){ return st==='online'?'is-live':st==='starting'?'is-connecting':st==='failed'?'is-failed':st==='finished'?'is-finished':''; }
-
-/* ---------------- log + clear functions ---------------- */
-function addLog(id,msg){
-  const s=S.streams[id]; if(!s) return;
-  s.logLines=s.logLines||[]; s.logLines.push(`[${ts()}] ${msg}`);
-  if(s.logLines.length>80) s.logLines=s.logLines.slice(-80);
-  const logEl=document.getElementById(`log-${id}`);
-  if(logEl){ const line=document.createElement('span'); line.textContent=`[${ts()}] ${msg}`;
-    if(/FAILED|error/i.test(msg))line.className='log-err'; else if(/LIVE|handshake|completed/i.test(msg))line.className='log-ok'; else if(/^WARN|retry|backing/i.test(msg))line.className='log-warn';
-    logEl.appendChild(line); logEl.scrollTop=logEl.scrollHeight; }
-}
-function clearLog(id){ if(!S.streams[id])return; S.streams[id].logLines=[]; const l=document.getElementById(`log-${id}`); if(l)l.innerHTML=''; persistStreams(); }
-function clearRawLog(id){ if(!S.streams[id])return; S.streams[id].rawFfmpegLines=[]; const l=document.getElementById(`rawlog-${id}`); if(l)l.innerHTML='<span style="color:#4a5568">Cleared.</span>'; persistStreams(); }
-
-/* ---------------- toast + utils ---------------- */
-function toast(msg,type='inf'){
-  const ic={ok:'check-circle',err:'x-circle',inf:'info',warn:'alert-triangle'};
-  const c=document.getElementById('toasts'); const el=document.createElement('div'); el.className=`toast ${type}`;
-  el.innerHTML=`<i data-lucide="${ic[type]||'info'}"></i><span>${esc(msg)}</span>`;
-  c.appendChild(el); if(window.lucide) lucide.createIcons({nodes:[el]});
-  setTimeout(()=>{ el.style.opacity='0'; el.style.transition='opacity .3s'; setTimeout(()=>el.remove(),320); },4200);
-}
-function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-function ts(){ return new Date().toLocaleTimeString(); }
-function toLocalDateTime(iso){ if(!iso)return''; const d=new Date(iso); const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; }
-function fmtDuration(ms){
-  const t=Math.max(0,Math.floor(ms/1000)); const h=Math.floor(t/3600),m=Math.floor((t%3600)/60),s=t%60;
-  const p=n=>String(n).padStart(2,'0');
-  return h>0?`${h}:${p(m)}:${p(s)}`:`${p(m)}:${p(s)}`;
-}
-// "Xm Ys left" — human-friendly ETA label shown in the progress row
-function fmtEtaLabel(ms){
-  const t=Math.max(0,Math.floor(ms/1000));
-  const h=Math.floor(t/3600), m=Math.floor((t%3600)/60), s=t%60;
-  if(h>0) return `${h}h ${m}m ${s}s left`;
-  if(m>0) return `${m}m ${s}s left`;
-  return `${s}s left`;
-}
-function timeAgo(iso){ if(!iso)return''; const s=Math.floor((Date.now()-new Date(iso).getTime())/1000); if(s<60)return `${s}s ago`; if(s<3600)return `${Math.floor(s/60)}m ago`; return `${Math.floor(s/3600)}h ago`; }
-</script>
-</body>
-</html>
+    if(/error|Error|failed|Failed|ref
