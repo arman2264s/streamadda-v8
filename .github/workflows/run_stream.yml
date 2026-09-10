@@ -84,9 +84,25 @@ on:
         default: "live_video.mp4"
         type: string
       ambient_audio:
-        description: "Enable natural road/street ASMR audio (true/false)"
+        description: "Legacy: enable natural road/street ASMR audio (true/false). Superseded by noise_profile."
         required: false
         default: "false"
+        type: string
+      noise_profile:
+        description: "Ambient noise filter profile (ignored if custom_audio_enabled=true)"
+        required: false
+        default: "road_asmr"
+        type: choice
+        options: [quiet, road_asmr, rain, cafe, forest, ocean, white_noise, pink_noise, brown_noise, wind, fireplace, office_hum]
+      custom_audio_enabled:
+        description: "Use custom uploaded audio track(s) instead of a noise profile (true/false)"
+        required: false
+        default: "false"
+        type: string
+      custom_audio_files:
+        description: "Custom audio filename(s) in repository root, comma-separated (no rename needed). Looped for the whole stream."
+        required: false
+        default: ""
         type: string
       backup_rtmp:
         description: "Backup RTMP URL including key (optional)"
@@ -170,6 +186,9 @@ jobs:
             RAW_PHOTO_DRIVE=$(pc photo_drive_url)
             RAW_VIDEO_DRIVE=$(pc video_drive_url)
             RAW_AMBIENT=$(pc ambient_audio "false")
+            RAW_NOISE_PROFILE=$(pc noise_profile "road_asmr")
+            RAW_CUSTOM_AUDIO_ENABLED=$(pc custom_audio_enabled "false")
+            RAW_CUSTOM_AUDIO_FILES=$(pc custom_audio_files "")
             RAW_NAME=$(pc stream_name "Live Stream")
             RAW_BACKUP=$(pc backup_rtmp)
             RAW_YTID=$(pc youtube_video_id)
@@ -189,6 +208,9 @@ jobs:
             RAW_PHOTO_FILE="${{ github.event.inputs.photo_filename }}"
             RAW_VIDEO_FILE="${{ github.event.inputs.video_filename }}"
             RAW_AMBIENT="${{ github.event.inputs.ambient_audio }}"
+            RAW_NOISE_PROFILE="${{ github.event.inputs.noise_profile }}"
+            RAW_CUSTOM_AUDIO_ENABLED="${{ github.event.inputs.custom_audio_enabled }}"
+            RAW_CUSTOM_AUDIO_FILES="${{ github.event.inputs.custom_audio_files }}"
             RAW_BACKUP="${{ github.event.inputs.backup_rtmp }}"
             RAW_YTID="${{ github.event.inputs.youtube_video_id }}"
             RAW_START_AT="${{ github.event.inputs.start_at }}"
@@ -207,6 +229,9 @@ jobs:
           PHOTO_FILENAME="${RAW_PHOTO_FILE:-live_photo.jpg}"
           VIDEO_FILENAME="${RAW_VIDEO_FILE:-live_video.mp4}"
           AMBIENT_AUDIO="${RAW_AMBIENT:-false}"
+          NOISE_PROFILE="${RAW_NOISE_PROFILE:-road_asmr}"
+          CUSTOM_AUDIO_ENABLED="${RAW_CUSTOM_AUDIO_ENABLED:-false}"
+          CUSTOM_AUDIO_FILES="${RAW_CUSTOM_AUDIO_FILES:-}"
           BACKUP_RTMP="${RAW_BACKUP:-}"
           YOUTUBE_VIDEO_ID="${RAW_YTID:-}"
           START_AT="${RAW_START_AT:-}"
@@ -230,6 +255,10 @@ jobs:
             photo_only|video_only|photo_video) ;;
             *) echo "WARN [SA] Unknown asset_mode. Defaulting to photo_video."; ASSET_MODE="photo_video" ;;
           esac
+          case "$NOISE_PROFILE" in
+            quiet|road_asmr|rain|cafe|forest|ocean|white_noise|pink_noise|brown_noise|wind|fireplace|office_hum) ;;
+            *) echo "WARN [SA] Unknown noise_profile '${NOISE_PROFILE}'. Defaulting to road_asmr."; NOISE_PROFILE="road_asmr" ;;
+          esac
 
           if [ "$PLATFORM" = "facebook" ]; then
             RTMP_BASE="rtmps://live-api-s.facebook.com:443/rtmp/"; PLATFORM_LABEL="Facebook Live"
@@ -243,6 +272,13 @@ jobs:
           normalise_bool() { case "${1,,}" in true|1|yes|on) echo true;; *) echo false;; esac; }
           DRIVE_MODE=$(normalise_bool "$DRIVE_MODE")
           AMBIENT_AUDIO=$(normalise_bool "$AMBIENT_AUDIO")
+          CUSTOM_AUDIO_ENABLED=$(normalise_bool "$CUSTOM_AUDIO_ENABLED")
+          # Strip whitespace around each comma-separated audio filename
+          CUSTOM_AUDIO_FILES=$(printf '%s' "$CUSTOM_AUDIO_FILES" | sed -E 's/[[:space:]]*,[[:space:]]*/,/g; s/^,+//; s/,+$//')
+          if [ "$CUSTOM_AUDIO_ENABLED" = "true" ] && [ -z "$CUSTOM_AUDIO_FILES" ]; then
+            echo "WARN [SA] custom_audio_enabled=true but no files supplied — falling back to noise_profile."
+            CUSTOM_AUDIO_ENABLED="false"
+          fi
 
           {
             echo "stream_name=${STREAM_NAME}"
@@ -258,6 +294,9 @@ jobs:
             echo "photo_filename=${PHOTO_FILENAME}"
             echo "video_filename=${VIDEO_FILENAME}"
             echo "ambient_audio=${AMBIENT_AUDIO}"
+            echo "noise_profile=${NOISE_PROFILE}"
+            echo "custom_audio_enabled=${CUSTOM_AUDIO_ENABLED}"
+            echo "custom_audio_files=${CUSTOM_AUDIO_FILES}"
             echo "backup_rtmp=${BACKUP_RTMP}"
             echo "youtube_video_id=${YOUTUBE_VIDEO_ID}"
             echo "start_at=${START_AT}"
@@ -278,7 +317,9 @@ jobs:
           printf "  Duration      : %s min (cap 345)\n" "$TOTAL_MINUTES"
           printf "  Asset Mode    : %s\n" "$ASSET_MODE"
           printf "  Drive Mode    : %s\n" "$DRIVE_MODE"
-          printf "  ASMR Ambient  : %s\n" "$AMBIENT_AUDIO"
+          printf "  ASMR Ambient  : %s (legacy flag)\n" "$AMBIENT_AUDIO"
+          printf "  Noise Profile : %s\n" "$NOISE_PROFILE"
+          printf "  Custom Audio  : %s (%s)\n" "$CUSTOM_AUDIO_ENABLED" "${CUSTOM_AUDIO_FILES:-none}"
           printf "  Photo File(s) : %s\n" "$PHOTO_FILENAME"
           [ -n "$START_AT" ] && printf "  Sched. Start  : %s\n" "$START_AT" || printf "  Sched. Start  : Immediate\n"
           [ -n "$STOP_AT" ]  && printf "  Hard Stop At  : %s\n" "$STOP_AT"
@@ -409,6 +450,30 @@ jobs:
 
           echo "photo_list=${PHOTO_LIST}" >> "$GITHUB_OUTPUT"
           echo "[SA] Asset acquisition complete. photo_list=[${PHOTO_LIST}]"
+
+          # ---- Verify custom audio track(s) — repo root, no rename needed ----
+          CUSTOM_AUDIO_ENABLED="${{ steps.params.outputs.custom_audio_enabled }}"
+          CUSTOM_AUDIO_FILES="${{ steps.params.outputs.custom_audio_files }}"
+          VERIFIED_AUDIO=""
+          if [ "$CUSTOM_AUDIO_ENABLED" = "true" ]; then
+            IFS=',' read -ra AARR <<< "$CUSTOM_AUDIO_FILES"
+            for raw in "${AARR[@]}"; do
+              a="$(echo "$raw" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+              [ -z "$a" ] && continue
+              if [ -f "$a" ] && [ -s "$a" ]; then
+                VERIFIED_AUDIO="${VERIFIED_AUDIO}${VERIFIED_AUDIO:+,}${a}"
+                echo "[SA] Custom audio track found: ${a} ($(du -sh "$a" | awk '{print $1}'))"
+              else
+                echo "WARN [SA] Custom audio '${a}' not found in repo root — skipping."
+              fi
+            done
+            if [ -z "$VERIFIED_AUDIO" ]; then
+              echo "WARN [SA] No valid custom audio files — reverting to noise_profile for this run."
+              CUSTOM_AUDIO_ENABLED="false"
+            fi
+          fi
+          echo "custom_audio_enabled_verified=${CUSTOM_AUDIO_ENABLED}" >> "$GITHUB_OUTPUT"
+          echo "custom_audio_files_verified=${VERIFIED_AUDIO}" >> "$GITHUB_OUTPUT"
 
 
       # ============================================================
@@ -563,6 +628,9 @@ jobs:
           PLATFORM="${{ steps.params.outputs.platform }}"
           ASSET_MODE="${{ steps.params.outputs.asset_mode }}"
           AMBIENT_AUDIO="${{ steps.params.outputs.ambient_audio }}"
+          NOISE_PROFILE="${{ steps.params.outputs.noise_profile }}"
+          CUSTOM_AUDIO_ENABLED="${{ steps.assets.outputs.custom_audio_enabled_verified }}"
+          CUSTOM_AUDIO_FILES="${{ steps.assets.outputs.custom_audio_files_verified }}"
           PHOTO_LIST="${{ steps.assets.outputs.photo_list }}"
           PHOTO_DUR="${{ steps.timing.outputs.photo_dur }}"
           VIDEO_DUR_INT="${{ steps.timing.outputs.video_dur_int }}"
@@ -646,7 +714,110 @@ jobs:
               "lowpass=f=6000,volume=1.3,"
               "aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100"
           )
-          AMBIENT_SRC = ASMR if AMBIENT else QUIET
+
+          # ============================================================
+          # NOISE_PROFILES — the full ambient/noise filter catalogue.
+          # Each entry is a self-contained FFmpeg lavfi filtergraph string
+          # (fed to `-f lavfi -i "<graph>"`) producing an infinite stereo
+          # ambience bed. Mirrors the profile keys previewed client-side
+          # in the UI (Web Audio API approximation) so what the user
+          # auditions before selecting matches what actually airs.
+          # ============================================================
+          NOISE_PROFILES = {
+              "quiet": QUIET,
+              "road_asmr": ASMR,
+              "rain": (
+                  "anoisesrc=r=44100:c=white:a=0.35,highpass=f=900,lowpass=f=9000,volume=1.1[rn];"
+                  "anoisesrc=r=44100:c=brown:a=0.06,lowpass=f=220,volume=0.6[rumble];"
+                  "[rn][rumble]amix=inputs=2:duration=longest:normalize=0,"
+                  "aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100"
+              ),
+              "cafe": (
+                  "anoisesrc=r=44100:c=pink:a=0.14,bandpass=f=1400:width_type=h:w=2600,volume=1.0[chatter];"
+                  "anoisesrc=r=44100:c=brown:a=0.05,lowpass=f=260,volume=0.5[room];"
+                  "aevalsrc='0.05*sin(2*PI*1.2*t)*sin(2*PI*440*t)':s=44100:c=stereo[clink];"
+                  "[chatter][room][clink]amix=inputs=3:duration=longest:normalize=0,"
+                  "aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100"
+              ),
+              "forest": (
+                  "anoisesrc=r=44100:c=green:a=0.10,bandpass=f=3200:width_type=h:w=3000,volume=1.0[wind_leaves];"
+                  "aevalsrc='0.04*sin(2*PI*2600*t)*max(0\\,sin(2*PI*0.6*t))':s=44100:c=stereo[bird];"
+                  "[wind_leaves][bird]amix=inputs=2:duration=longest:normalize=0,"
+                  "aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100"
+              ),
+              "ocean": (
+                  "anoisesrc=r=44100:c=white:a=0.30,lowpass=f=1800,volume=1.2[surf];"
+                  "aevalsrc='0.15*sin(2*PI*0.09*t)':s=44100:c=stereo[swell];"
+                  "[surf][swell]amix=inputs=2:duration=longest:weights='1 0.6':normalize=0,"
+                  "lowpass=f=4000,aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100"
+              ),
+              "white_noise": "anoisesrc=r=44100:c=white:a=0.20,aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100",
+              "pink_noise":  "anoisesrc=r=44100:c=pink:a=0.25,aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100",
+              "brown_noise": "anoisesrc=r=44100:c=brown:a=0.35,aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100",
+              "wind": (
+                  "anoisesrc=r=44100:c=white:a=0.22,bandpass=f=500:width_type=h:w=900,volume=1.3[gust];"
+                  "aevalsrc='0.06*sin(2*PI*0.05*t)':s=44100:c=stereo[sway];"
+                  "[gust][sway]amix=inputs=2:duration=longest:normalize=0,"
+                  "aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100"
+              ),
+              "fireplace": (
+                  "anoisesrc=r=44100:c=pink:a=0.10,highpass=f=1800,volume=0.9[crackle_bed];"
+                  "aevalsrc='0.05*sin(2*PI*90*t)*max(0\\,sin(2*PI*3.1*t))':s=44100:c=stereo[pop];"
+                  "[crackle_bed][pop]amix=inputs=2:duration=longest:normalize=0,"
+                  "aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100"
+              ),
+              "office_hum": (
+                  "aevalsrc='0.05*sin(2*PI*60*t)+0.02*sin(2*PI*120*t)':s=44100:c=stereo[hum];"
+                  "anoisesrc=r=44100:c=white:a=0.015,volume=0.4[floor];"
+                  "[hum][floor]amix=inputs=2:duration=longest:normalize=0,"
+                  "aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100"
+              ),
+          }
+
+          CUSTOM_AUDIO   = os.environ.get("CUSTOM_AUDIO_ENABLED", "false") == "true"
+          AUDIO_FILES    = [a.strip() for a in os.environ.get("CUSTOM_AUDIO_FILES", "").split(",") if a.strip()]
+          _profile_key   = os.environ.get("NOISE_PROFILE", "").strip()
+          if _profile_key not in NOISE_PROFILES:
+              # Legacy fallback: old ambient_audio boolean, or an unknown/blank profile key.
+              _profile_key = "road_asmr" if AMBIENT else "quiet"
+          NOISE_SRC = NOISE_PROFILES[_profile_key]
+          AMBIENT_SRC = NOISE_SRC  # kept for readability at existing call sites below
+
+          def next_audio_input(duration=None):
+              """
+              Append the currently selected ambience source as the next FFmpeg
+              input (custom uploaded audio track(s) if enabled, else the chosen
+              noise/ambience profile) and return its input stream index.
+
+              Custom audio: single file -> `-stream_loop -1` on that file.
+              Multiple files -> a generated ffconcat playlist, also looped
+              forever with `-stream_loop -1`, so the whole track list repeats
+              back-to-back for the entire stream duration.
+              """
+              global idx
+              if CUSTOM_AUDIO and AUDIO_FILES:
+                  if len(AUDIO_FILES) == 1:
+                      pre = ["-stream_loop", "-1"]
+                      if duration is not None:
+                          pre += ["-t", str(duration)]
+                      inputs.extend(pre + ["-re", "-i", AUDIO_FILES[0]])
+                  else:
+                      with open("/tmp/sa_audio_playlist.txt", "w") as fh:
+                          for a in AUDIO_FILES:
+                              safe = os.path.abspath(a).replace("'", "'\\''")
+                              fh.write(f"file '{safe}'\n")
+                      pre = ["-stream_loop", "-1", "-f", "concat", "-safe", "0"]
+                      if duration is not None:
+                          pre += ["-t", str(duration)]
+                      inputs.extend(pre + ["-re", "-i", "/tmp/sa_audio_playlist.txt"])
+              else:
+                  pre = ["-f", "lavfi"]
+                  if duration is not None:
+                      pre += ["-t", str(duration)]
+                  inputs.extend(pre + ["-i", NOISE_SRC])
+              cur = idx
+              idx += 1
+              return cur
 
           def vscale(inp, out):
               return (f"[{inp}]scale={W}:{H}:force_original_aspect_ratio=decrease,"
@@ -696,24 +867,24 @@ jobs:
               # Watchdog fill: loop the primary asset to burn remaining time.
               if MODE == "photo_only" or (MODE == "photo_video"):
                   inputs.extend(["-re", "-loop", "1", "-framerate", "30", "-i", PHOTOS[0]])
-                  fc.append(vscale("0:v", "vout"))
-                  inputs.extend(["-f", "lavfi", "-i", AMBIENT_SRC])
-                  fc.append(afmt("1:a", "aout"))
+                  fc.append(vscale("0:v", "vout")); idx += 1
+                  ai = next_audio_input()
+                  fc.append(afmt(f"{ai}:a", "aout"))
               else:
                   inputs.extend(["-stream_loop", "-1", "-re", "-i", VIDEO])
-                  fc.append(vscale("0:v", "vout"))
+                  fc.append(vscale("0:v", "vout")); idx += 1
                   if HAS_AUD:
                       fc.append(afmt("0:a", "aout"))
                   else:
-                      inputs.extend(["-f", "lavfi", "-i", AMBIENT_SRC]); fc.append(afmt("1:a", "aout"))
+                      ai = next_audio_input(); fc.append(afmt(f"{ai}:a", "aout"))
               print(json.dumps(["-hide_banner", "-y"] + inputs +
                     ["-filter_complex", ";".join(fc), "-map", "[vout]", "-map", "[aout]"] + ENCODE))
               sys.exit(0)
 
           if MODE == "photo_only":
               add_photo_slideshow(TOTAL, "vout")
-              inputs.extend(["-f", "lavfi", "-t", str(TOTAL), "-i", AMBIENT_SRC])
-              fc.append(afmt(f"{idx}:a", "aout")); idx += 1
+              ai = next_audio_input(TOTAL)
+              fc.append(afmt(f"{ai}:a", "aout"))
               maps = ["-map", "[vout]", "-map", "[aout]"]
 
           elif MODE == "video_only":
@@ -722,14 +893,13 @@ jobs:
               if HAS_AUD:
                   fc.append(afmt("0:a", "aout"))
               else:
-                  inputs.extend(["-f", "lavfi", "-i", AMBIENT_SRC])
-                  fc.append(afmt(f"{idx}:a", "aout")); idx += 1
+                  ai = next_audio_input()
+                  fc.append(afmt(f"{ai}:a", "aout"))
               maps = ["-map", "[vout]", "-map", "[aout]"]
 
           else:  # photo_video
               add_photo_slideshow(PHOTO_DUR, "vphoto")
-              inputs.extend(["-f", "lavfi", "-t", str(PHOTO_DUR), "-i", AMBIENT_SRC])
-              photo_audio_idx = idx; idx += 1
+              photo_audio_idx = next_audio_input(PHOTO_DUR)
               inputs.extend(["-re", "-i", VIDEO])
               video_idx = idx; idx += 1
               fc.append(vscale(f"{video_idx}:v", "vvid"))
@@ -737,8 +907,10 @@ jobs:
               if HAS_AUD:
                   fc.append(afmt(f"{video_idx}:a", "avid"))
               else:
-                  inputs.extend(["-f", "lavfi", "-t", str(VIDEO_DUR), "-i", QUIET])
-                  fc.append(afmt(f"{idx}:a", "avid")); idx += 1
+                  # Video phase keeps its own ambience bed too (continuous loop
+                  # across the whole broadcast, not just the photo phase).
+                  avid_idx = next_audio_input(VIDEO_DUR)
+                  fc.append(afmt(f"{avid_idx}:a", "avid"))
               fc.append("[vphoto][aphoto][vvid][avid]concat=n=2:v=1:a=1[vout][aout]")
               maps = ["-map", "[vout]", "-map", "[aout]"]
 
@@ -746,7 +918,7 @@ jobs:
                 ["-filter_complex", ";".join(fc)] + maps + ENCODE))
           PYEOF
 
-          export WIDTH HEIGHT ASSET_MODE AMBIENT_AUDIO HAS_AUDIO PHOTO_LIST PHOTO_DUR VIDEO_DUR_INT TOTAL_SECONDS RTMP_URL
+          export WIDTH HEIGHT ASSET_MODE AMBIENT_AUDIO NOISE_PROFILE CUSTOM_AUDIO_ENABLED CUSTOM_AUDIO_FILES HAS_AUDIO PHOTO_LIST PHOTO_DUR VIDEO_DUR_INT TOTAL_SECONDS RTMP_URL
 
           # ============================================================
           # run_ffmpeg(): build args, create named pipe, stream raw stderr
@@ -959,5 +1131,7 @@ jobs:
           printf "  Ratio        : %s\n" "${{ steps.params.outputs.ratio }}"
           printf "  Duration     : %s min\n" "${{ steps.params.outputs.total_minutes }}"
           printf "  ASMR Ambient : %s\n" "${{ steps.params.outputs.ambient_audio }}"
+          printf "  Noise Profile: %s\n" "${{ steps.params.outputs.noise_profile }}"
+          printf "  Custom Audio : %s (%s)\n" "${{ steps.params.outputs.custom_audio_enabled }}" "${{ steps.params.outputs.custom_audio_files }}"
           printf "  FFmpeg Exit  : %s\n" "${{ steps.ffmpeg_stream.outputs.ffmpeg_exit_code }}"
           echo ""
