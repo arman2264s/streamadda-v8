@@ -1649,4 +1649,171 @@ function buildCard(id){
     // Muxer / RTMP / flv output lines
     if(/flv|rtmp|RTMP|mux|Mux|FLV|Opening|Press/.test(l)) return `<span class="fr-mux">${esc(l)}</span>`;
     // Error lines
-    if(/error|Error|failed|Failed|ref
+    if(/error|Error|failed|Failed|refused|timed out/i.test(l)) return `<span class="fr-err">${esc(l)}</span>`;
+    // Warning lines
+    if(/warning|Warning|warn|WARN|deprecated/i.test(l)) return `<span class="fr-warn">${esc(l)}</span>`;
+    // Default
+    return `<span>${esc(l)}</span>`;
+  }).join('');
+
+  // Errors & Warnings — dedicated live feed, separate card from the raw FFmpeg tail
+  const errLines=(s.errLines||[]).slice(-60);
+  const errHtml=errLines.map(e=>`<span class="${e.level==='err'?'el-err':'el-warn'}">${e.level==='err'?'✕':'⚠'} ${esc(e.text)}</span>`).join('');
+  const errCount=errLines.filter(e=>e.level==='err').length, warnCount=errLines.filter(e=>e.level==='warn').length;
+
+  const runLink=s.runUrl?`<a href="${esc(s.runUrl)}" target="_blank" rel="noopener" style="font-size:11px">View run</a>`:'';
+
+  // Stop-pending panel: 10s countdown + Dismiss button
+  const stopPanelHtml=isStopPending?`
+  <div class="stop-panel">
+    <span class="sp-text"><i data-lucide="timer"></i>YouTube processing window — waiting for broadcast to register as Ended</span>
+    <span class="sp-cnt">${s.stopCountdown||0}s</span>
+    <button class="btn btn-ok btn-sm" onclick="dismissStream('${id}')"><i data-lucide="check-circle"></i> Dismiss</button>
+  </div>`:'';
+
+  el.innerHTML=`
+  <div class="card-body">
+    <div class="card-top">
+      <div style="flex:1;min-width:0">
+        <div class="card-title">${esc(s.name)}</div>
+        <div class="card-meta" style="margin-top:.4rem">
+          ${modeChips[s.assetMode]||''} ${driveChip} ${ambChip}
+          <span><i data-lucide="tv"></i>${esc(s.platform)}</span>
+          <span><i data-lucide="ratio"></i>${esc(s.ratio)}</span>
+        </div>
+      </div>
+      <div>${badgeHtml(s,isStopPending)}</div>
+    </div>
+
+    <div class="phase">
+      <div class="phase-row">
+        <span class="phase-lbl"><i data-lucide="${s.phase==='video'?'film':isStopPending?'square-x':'image'}"></i>
+          ${isStopPending?'Stopping…':s.phase==='video'?'Video phase':s.phase==='done'?'Completed':s.phase==='failed'?'Failed':(s.status==='starting'?'Connecting…':s.status==='scheduled'?'Scheduled':'Photo phase')}</span>
+        <span style="display:flex;align-items:center;gap:.5rem">
+          ${isLive&&!isStopPending?`<span class="phase-eta">${etaLabel}</span>`:''}
+          <span>${pct}%</span>
+        </span>
+      </div>
+      <div class="track"><div class="fill ${fillClass}" style="width:${pct}%"></div></div>
+      ${isLive&&!isStopPending?`<div style="font-size:10px;color:var(--muted);margin-top:.25rem;text-align:right">${etaHms} remaining</div>`:''}
+    </div>
+
+    <div class="telemetry">
+      <div class="metric ${isLive?'hot':''}"><div class="m-k"><i data-lucide="clock"></i>Uptime</div><div class="m-v mono">${uptime}</div></div>
+      <div class="metric"><div class="m-k"><i data-lucide="hourglass"></i>Remaining</div><div class="m-v mono">${isLive?etaHms:'--:--:--'}</div></div>
+      <div class="metric"><div class="m-k"><i data-lucide="activity"></i>Speed</div><div class="m-v mono">${esc(t.speed||'—')}</div></div>
+      <div class="metric"><div class="m-k"><i data-lucide="gauge"></i>FPS</div><div class="m-v mono">${esc(t.fps||'—')}</div></div>
+      <div class="metric"><div class="m-k"><i data-lucide="wifi"></i>Bitrate</div><div class="m-v mono">${esc(t.bitrate||'—')}</div></div>
+      <div class="metric"><div class="m-k"><i data-lucide="layers"></i>Frames</div><div class="m-v mono">${s.frameCount?s.frameCount.toLocaleString():'—'}</div></div>
+    </div>
+
+    <div class="finish"><i data-lucide="calendar"></i>Dispatched ${timeAgo(s.dispatchedAt)}${s.startedAt?' · live since '+new Date(s.startedAt).toLocaleTimeString():''}${runLink?' · '+runLink:''}</div>
+
+    <hr class="divider" />
+
+    <div class="actions">
+      ${!isStopPending&&(s.status==='online'||s.status==='starting'||s.status==='scheduled')?`<button class="btn btn-danger btn-sm" onclick="stopStream('${id}')"><i data-lucide="square"></i> Stop</button>`:''}
+      ${isStopPending?`<button class="btn btn-ok btn-sm" onclick="dismissStream('${id}')"><i data-lucide="check-circle"></i> Dismiss</button>`:''}
+      ${!isStopPending&&['finished','offline','failed'].includes(s.status)?`<button class="btn btn-primary btn-sm" onclick="openRestart('${id}')"><i data-lucide="rotate-ccw"></i> Restart</button>`:''}
+      <button class="btn btn-ghost btn-sm" onclick="openEdit('${id}')"><i data-lucide="sliders-horizontal"></i> Adjust</button>
+      ${s.ytVideoId?`<a class="btn btn-sky btn-sm" href="https://studio.youtube.com/video/${esc(s.ytVideoId)}/livestreaming" target="_blank" rel="noopener"><i data-lucide="external-link"></i> Studio</a>`:''}
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto;color:var(--danger)" onclick="deleteStream('${id}')"><i data-lucide="trash-2"></i></button>
+    </div>
+
+    ${stopPanelHtml}
+
+    <!-- Engine log: light background, [SA] / [SA_STATUS] / [SA_TELEMETRY] tagged lines -->
+    <div class="logwrap" style="margin-top:.75rem">
+      <div class="logwrap-head">
+        <span class="lh"><i data-lucide="terminal"></i> Engine log${t.time?` · t=${esc(t.time)}`:''}</span>
+        <button class="btn btn-ghost btn-xs" onclick="clearLog('${id}')"><i data-lucide="eraser"></i> Clear</button>
+      </div>
+      <div class="log" id="log-${id}">${logHtml}</div>
+    </div>
+
+    <!-- FFMPEG OUTPUT: dark terminal, raw unfiltered FFmpeg stderr lines. Fast-polled
+         (3s) while the stream is online — the closest a browser can get to a true
+         server-push/SSE feed against the GitHub Actions REST log API. -->
+    <div class="logwrap ffterm" style="margin-top:.5rem">
+      <div class="logwrap-head">
+        <span class="lh">${s.status==='online'?'<span class="live-dot-sm"></span>':'<i data-lucide="terminal-square"></i> '}FFMPEG OUTPUT
+          <span style="font-size:10px;font-weight:400;color:#4a5568;margin-left:.4rem">
+            ${rawLines.length?`(${rawLines.length} lines${s.status==='online'?' · live tail':''})`:'waiting for stream…'}
+          </span>
+        </span>
+        <button class="btn btn-ghost btn-xs" style="color:#94a3b8;border-color:#2d3748" onclick="clearRawLog('${id}')"><i data-lucide="eraser"></i> Clear</button>
+      </div>
+      <div class="log ffraw" id="rawlog-${id}">${rawHtml||'<span style="color:#4a5568">No FFmpeg output yet. Output appears once the stream starts encoding.</span>'}</div>
+    </div>
+
+    <!-- ERRORS & WARNINGS: dedicated card, separate from the raw tail above —
+         pulls from the FULL job log (GH step annotations + raw ffmpeg stderr +
+         [SA_STATUS:FAILED] markers), not just [SA_FFMPEG_RAW] lines. -->
+    <div class="logwrap errterm" style="margin-top:.5rem">
+      <div class="logwrap-head">
+        <span class="lh"><i data-lucide="alert-octagon"></i> Errors &amp; Warnings
+          <span style="font-size:10px;font-weight:400;color:#7f5257;margin-left:.4rem">
+            ${errLines.length?`(${errCount} error${errCount===1?'':'s'} · ${warnCount} warning${warnCount===1?'':'s'})`:'clean — none detected'}
+          </span>
+        </span>
+        <button class="btn btn-ghost btn-xs" style="color:#fca5a5;border-color:#3a1620" onclick="clearErrLog('${id}')"><i data-lucide="eraser"></i> Clear</button>
+      </div>
+      <div class="log errlog" id="errlog-${id}">${errHtml||'<span style="color:#7f5257">No errors or warnings detected yet.</span>'}</div>
+    </div>
+
+  </div>`;
+  return el;
+}
+
+function badgeHtml(s, isStopPending){
+  if(isStopPending) return '<span class="badge b-stopping"><span class="d"></span>STOPPING</span>';
+  if(s.status==='online'&&s.phase==='video') return '<span class="badge b-video"><span class="d"></span>LIVE · VIDEO</span>';
+  if(s.status==='online') return '<span class="badge b-photo"><span class="d"></span>LIVE · PHOTO</span>';
+  const map={starting:['b-starting',true,'CONNECTING'],scheduled:['b-scheduled',false,'SCHEDULED'],offline:['b-offline',false,'OFFLINE'],finished:['b-finished',false,'FINISHED'],failed:['b-failed',true,'FAILED']};
+  const info=map[s.status]||map.offline;
+  return `<span class="badge ${info[0]}">${info[1]?'<span class="d"></span>':''}${info[2]}</span>`;
+}
+function statusCardClass(st){ return st==='online'?'is-live':st==='starting'?'is-connecting':st==='failed'?'is-failed':st==='finished'?'is-finished':''; }
+
+/* ---------------- log + clear functions ---------------- */
+function addLog(id,msg){
+  const s=S.streams[id]; if(!s) return;
+  s.logLines=s.logLines||[]; s.logLines.push(`[${ts()}] ${msg}`);
+  if(s.logLines.length>80) s.logLines=s.logLines.slice(-80);
+  const logEl=document.getElementById(`log-${id}`);
+  if(logEl){ const line=document.createElement('span'); line.textContent=`[${ts()}] ${msg}`;
+    if(/FAILED|error/i.test(msg))line.className='log-err'; else if(/LIVE|handshake|completed/i.test(msg))line.className='log-ok'; else if(/^WARN|retry|backing/i.test(msg))line.className='log-warn';
+    logEl.appendChild(line); logEl.scrollTop=logEl.scrollHeight; }
+}
+function clearLog(id){ if(!S.streams[id])return; S.streams[id].logLines=[]; const l=document.getElementById(`log-${id}`); if(l)l.innerHTML=''; persistStreams(); }
+function clearRawLog(id){ if(!S.streams[id])return; S.streams[id].rawFfmpegLines=[]; const l=document.getElementById(`rawlog-${id}`); if(l)l.innerHTML='<span style="color:#4a5568">Cleared.</span>'; persistStreams(); }
+function clearErrLog(id){ if(!S.streams[id])return; S.streams[id].errLines=[]; const l=document.getElementById(`errlog-${id}`); if(l)l.innerHTML='<span style="color:#7f5257">Cleared.</span>'; persistStreams(); }
+
+/* ---------------- toast + utils ---------------- */
+function toast(msg,type='inf'){
+  const ic={ok:'check-circle',err:'x-circle',inf:'info',warn:'alert-triangle'};
+  const c=document.getElementById('toasts'); const el=document.createElement('div'); el.className=`toast ${type}`;
+  el.innerHTML=`<i data-lucide="${ic[type]||'info'}"></i><span>${esc(msg)}</span>`;
+  c.appendChild(el); if(window.lucide) lucide.createIcons({nodes:[el]});
+  setTimeout(()=>{ el.style.opacity='0'; el.style.transition='opacity .3s'; setTimeout(()=>el.remove(),320); },4200);
+}
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function ts(){ return new Date().toLocaleTimeString(); }
+function toLocalDateTime(iso){ if(!iso)return''; const d=new Date(iso); const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; }
+function fmtDuration(ms){
+  const t=Math.max(0,Math.floor(ms/1000)); const h=Math.floor(t/3600),m=Math.floor((t%3600)/60),s=t%60;
+  const p=n=>String(n).padStart(2,'0');
+  return h>0?`${h}:${p(m)}:${p(s)}`:`${p(m)}:${p(s)}`;
+}
+// "Xm Ys left" — human-friendly ETA label shown in the progress row
+function fmtEtaLabel(ms){
+  const t=Math.max(0,Math.floor(ms/1000));
+  const h=Math.floor(t/3600), m=Math.floor((t%3600)/60), s=t%60;
+  if(h>0) return `${h}h ${m}m ${s}s left`;
+  if(m>0) return `${m}m ${s}s left`;
+  return `${s}s left`;
+}
+function timeAgo(iso){ if(!iso)return''; const s=Math.floor((Date.now()-new Date(iso).getTime())/1000); if(s<60)return `${s}s ago`; if(s<3600)return `${Math.floor(s/60)}m ago`; return `${Math.floor(s/3600)}h ago`; }
+</script>
+</body>
+</html>
