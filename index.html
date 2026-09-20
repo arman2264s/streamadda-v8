@@ -219,6 +219,10 @@ dialog::backdrop{background:rgba(15,23,42,.45);backdrop-filter:blur(3px)}
 .fileitem{display:flex;align-items:center;gap:.5rem;padding:.4rem .55rem;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px}
 .fileitem svg{width:14px;height:14px;color:var(--muted);flex-shrink:0}
 .fileitem .fn{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+.fileitem .rn-input{flex:1;min-width:0;border:1px solid transparent;background:transparent;color:var(--text);font-size:12px;font-family:inherit;padding:.15rem .3rem;border-radius:4px}
+.fileitem .rn-input:hover{background:var(--surface3)}
+.fileitem .rn-input:focus{outline:none;border-color:var(--primary);background:#fff}
+.fileitem .rn-input:disabled{color:var(--muted);background:transparent}
 .fileitem .fsz{color:var(--muted);font-size:11px}
 .fileitem .fx{cursor:pointer;color:var(--muted);display:flex}
 .fileitem .fx:hover{color:var(--danger)}
@@ -348,7 +352,7 @@ dialog::backdrop{background:rgba(15,23,42,.45);backdrop-filter:blur(3px)}
 <dialog id="dlg-upload">
   <div class="dlg-head">
     <span class="hi"><i data-lucide="cloud-upload"></i></span>
-    <div><h2>Upload Assets</h2><p>Photos, videos &amp; audio → repository root · max 200&nbsp;MB total · original filenames kept (no rename)</p></div>
+    <div><h2>Upload Assets</h2><p>Photos, videos &amp; audio → repository root · max 200&nbsp;MB total · tap a name below to rename before uploading</p></div>
     <button class="btn btn-ghost btn-icon x" onclick="document.getElementById('dlg-upload').close()"><i data-lucide="x"></i></button>
   </div>
   <div class="dlg-body">
@@ -360,6 +364,7 @@ dialog::backdrop{background:rgba(15,23,42,.45);backdrop-filter:blur(3px)}
     </div>
     <div class="uploadbar"><div class="uf" id="usage-fill"></div></div>
     <div class="usage"><span id="usage-text">0 B selected</span><span>Limit 200 MB</span></div>
+    <div class="hint" id="rename-hint" style="margin:.5rem 0 0" >Tap any filename below to rename it — that's exactly the name it will get on GitHub.</div>
     <div class="filelist" id="filelist"></div>
   </div>
   <div class="dlg-foot">
@@ -798,7 +803,7 @@ function addFiles(fileList){
     const ext=(f.name.split('.').pop()||'').toLowerCase();
     if(!ASSET_EXT.includes(ext)){ toast(`Skipped ${f.name} — unsupported type`,'warn'); continue; }
     if(S.uploads.some(u=>u.file.name===f.name&&u.file.size===f.size)) continue;
-    S.uploads.push({file:f,status:'pending'});
+    S.uploads.push({file:f,name:f.name,status:'pending'});
   }
   renderUploadList();
 }
@@ -806,6 +811,18 @@ function removeUpload(i){ S.uploads.splice(i,1); renderUploadList(); }
 function clearUploads(){ S.uploads=[]; renderUploadList(); }
 function totalUploadBytes(){ return S.uploads.reduce((a,u)=>a+u.file.size,0); }
 function fmtBytes(b){ if(b<1024)return b+' B'; if(b<1048576)return (b/1024).toFixed(1)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
+/* Rename a pending file before it's committed to GitHub — the repo filename
+   becomes whatever is typed here, not necessarily the gallery's original
+   name. Strips path separators/quotes, and re-attaches the original
+   extension if the user clears it entirely so the asset type is preserved. */
+function renameUpload(i,val){
+  const u=S.uploads[i]; if(!u) return;
+  let clean=String(val||'').trim().replace(/[\/\\'"]+/g,'').replace(/\s+/g,'_');
+  const origExt=(u.file.name.split('.').pop()||'').toLowerCase();
+  if(!clean) clean=u.file.name;
+  if(!/\.[a-zA-Z0-9]+$/.test(clean)&&origExt) clean=`${clean}.${origExt}`;
+  u.name=clean;
+}
 function renderUploadList(){
   const list=document.getElementById('filelist');
   const total=totalUploadBytes();
@@ -819,8 +836,13 @@ function renderUploadList(){
   list.innerHTML=S.uploads.map((u,i)=>{
     const ext=(u.file.name.split('.').pop()||'').toLowerCase();
     const isImg=['jpg','jpeg','png','webp','gif','bmp'].includes(ext);
+    const isAud=AUD_EXT.includes(ext);
+    const icon=isImg?'image':isAud?'music':'film';
     const st=u.status==='done'?'<span class="fstat ok">Uploaded</span>':u.status==='error'?`<span class="fstat err">Failed</span>`:u.status==='uploading'?'<i data-lucide="loader" class="spin"></i>':'';
-    return `<div class="fileitem"><i data-lucide="${isImg?'image':'film'}"></i><span class="fn">${esc(u.file.name)}</span><span class="fsz">${fmtBytes(u.file.size)}</span>${st}<span class="fx" onclick="removeUpload(${i})"><i data-lucide="x"></i></span></div>`;
+    const locked=u.status==='done'||u.status==='uploading';
+    return `<div class="fileitem"><i data-lucide="${icon}"></i>
+      <input class="rn-input" value="${esc(u.name)}" ${locked?'disabled':''} oninput="renameUpload(${i},this.value)" title="Rename before uploading to GitHub" />
+      <span class="fsz">${fmtBytes(u.file.size)}</span>${st}<span class="fx" onclick="removeUpload(${i})"><i data-lucide="x"></i></span></div>`;
   }).join('');
   icons();
 }
@@ -840,20 +862,21 @@ async function commitUploads(){
   let ok=0,fail=0;
   for(const u of S.uploads){
     if(u.status==='done') { ok++; continue; }
+    if(!u.name) u.name=u.file.name;
     u.status='uploading'; renderUploadList();
     try{
       const b64=await fileToBase64(u.file);
-      const path=encodeURIComponent(u.file.name);
+      const path=encodeURIComponent(u.name);
       let sha=null;
       const head=await ghFetch(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path}`);
       if(head.ok){ const j=await head.json(); sha=j.sha; }
       const res=await ghFetch(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path}`,{
         method:'PUT',
-        body:JSON.stringify({message:`StreamAdda upload: ${u.file.name}`,content:b64,...(sha?{sha}:{})}),
+        body:JSON.stringify({message:`StreamAdda upload: ${u.name}`,content:b64,...(sha?{sha}:{})}),
       });
       if(!res.ok){ const e=await res.json().catch(()=>({})); throw new Error(e.message||('HTTP '+res.status)); }
       u.status='done'; ok++;
-    }catch(err){ u.status='error'; u.error=err.message; fail++; toast(`Upload failed: ${u.file.name} — ${err.message}`,'err'); }
+    }catch(err){ u.status='error'; u.error=err.message; fail++; toast(`Upload failed: ${u.name} — ${err.message}`,'err'); }
     renderUploadList();
   }
   btn.disabled=false;
