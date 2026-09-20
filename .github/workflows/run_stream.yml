@@ -1010,6 +1010,7 @@ jobs:
 
           monitor_stream() {
             local CONNECTED=false LAST_TELEM="" CHECK=0 VIDEO_PHASE=false
+            local STALL_FRAME="" STALL_SINCE=0 STALL_LIMIT=18
             while [ ! -f "$DONE_FILE" ]; do
               sleep 4; CHECK=$(( CHECK + 1 ))
               [ -f "$FFMPEG_LOG" ] || continue
@@ -1045,6 +1046,31 @@ jobs:
                   TM=$(echo "$LINE"  | grep -oE 'time=[0-9:.]+' | grep -oE '[0-9:.]+' | tail -1)
                   TELE="[SA_TELEMETRY] frame=${FR:-0} fps=${FPS:-0} bitrate=${BR:-0kbits/s} speed=${SPD:-0x} time=${TM:-00:00:00}"
                   if [ "$TELE" != "$LAST_TELEM" ]; then echo "$TELE"; LAST_TELEM="$TELE"; fi
+
+                  # ---- HARD BACKUP PLAN: dead-socket / silent-stall watchdog ----
+                  # A zombied RTMP TCP connection (YouTube silently dropped us,
+                  # or the network path died) does NOT always make FFmpeg exit —
+                  # it can block for a long time on a write() to a dead socket
+                  # while frame= stops advancing. Left alone, the FFmpeg process
+                  # (and therefore this UI) would keep showing "live" long after
+                  # YouTube has actually ended the broadcast on their side. So:
+                  # if the frame counter is frozen for STALL_LIMIT seconds while
+                  # we believe we're connected, treat it as a dead connection and
+                  # force-kill FFmpeg *now* — the outer attempt-loop immediately
+                  # relaunches (fill mode, remaining time only), reconnecting far
+                  # faster than waiting on FFmpeg's own (very long) TCP timeout.
+                  local NOWS; NOWS=$(date +%s)
+                  if [ "${FR:-0}" != "$STALL_FRAME" ]; then
+                    STALL_FRAME="${FR:-0}"; STALL_SINCE=$NOWS
+                  elif [ "$STALL_SINCE" -gt 0 ] && [ $(( NOWS - STALL_SINCE )) -ge "$STALL_LIMIT" ]; then
+                    echo "[SA] *** Frame counter frozen for ${STALL_LIMIT}s at frame=${STALL_FRAME} — dead/zombied RTMP socket suspected ***"
+                    echo "[SA_STATUS:STALL_DETECTED]"
+                    if [ -f "$PID_FILE" ]; then
+                      local SP; SP=$(cat "$PID_FILE" 2>/dev/null)
+                      [ -n "$SP" ] && kill -9 "$SP" 2>/dev/null
+                    fi
+                    CONNECTED=false; STALL_SINCE=0; STALL_FRAME=""
+                  fi
                 fi
               fi
             done
@@ -1088,6 +1114,63 @@ jobs:
           echo ""; echo "--- FFmpeg stderr tail ---"; tail -25 "$FFMPEG_LOG" 2>/dev/null || true; echo "--- end ---"
           exit 0
 
+
+      # ============================================================
+      # STEP 8a — Explicit YouTube "End broadcast" via the Data API
+      #
+      # Best-effort and OPTIONAL. The RTMP black-frame EOF signal below
+      # already tells YouTube the feed stopped, and YouTube auto-completes
+      # the broadcast shortly after. This step goes further: it actively
+      # calls liveBroadcasts.transition(complete) so the dashboard shows
+      # "Ended" immediately and cleanly rather than waiting on YouTube's
+      # own timeout. It only runs if you have added these repo secrets
+      # (Settings → Secrets and variables → Actions):
+      #   YT_CLIENT_ID, YT_CLIENT_SECRET, YT_REFRESH_TOKEN
+      # (a Google OAuth client + refresh token with the youtube.force-ssl
+      # scope for the channel that owns the broadcast). If they are not
+      # set, this step logs one line and skips — the RTMP EOF signal in
+      # step 8 is still relied on as the primary "end the stream" method.
+      # ============================================================
+      - name: "[8a/8] Explicit YouTube API broadcast end (optional)"
+        if: always()
+        shell: bash
+        env:
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+        run: |
+          set +e
+          PLATFORM="${{ steps.params.outputs.platform }}"
+          VIDEO_ID="${{ steps.params.outputs.youtube_video_id }}"
+          if [ "$PLATFORM" != "youtube" ] || [ -z "$VIDEO_ID" ]; then
+            echo "[SA] Not a YouTube stream with a video/broadcast ID — skipping API end-call."; exit 0
+          fi
+          if [ -z "$YT_CLIENT_ID" ] || [ -z "$YT_CLIENT_SECRET" ] || [ -z "$YT_REFRESH_TOKEN" ]; then
+            echo "[SA] YT_CLIENT_ID / YT_CLIENT_SECRET / YT_REFRESH_TOKEN secrets not configured — skipping explicit API end-call."
+            echo "[SA] (Relying on the RTMP end-of-stream signal for auto-completion instead — see step 8.)"
+            exit 0
+          fi
+          echo "[SA] Requesting a fresh access token…"
+          TOKEN_RESP=$(curl -s -X POST https://oauth2.googleapis.com/token \
+            -d "client_id=${YT_CLIENT_ID}" -d "client_secret=${YT_CLIENT_SECRET}" \
+            -d "refresh_token=${YT_REFRESH_TOKEN}" -d "grant_type=refresh_token")
+          ACCESS_TOKEN=$(echo "$TOKEN_RESP" | python3 -c "import sys,json;print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null)
+          if [ -z "$ACCESS_TOKEN" ]; then
+            echo "WARN [SA] Could not refresh a YouTube access token — API end-call skipped. Response:"
+            echo "$TOKEN_RESP" | cut -c1-300
+            exit 0
+          fi
+          echo "[SA] Transitioning broadcast ${VIDEO_ID} to complete…"
+          RESP=$(curl -s -X POST \
+            "https://www.googleapis.com/youtube/v3/liveBroadcasts/transition?broadcastStatus=complete&id=${VIDEO_ID}&part=status" \
+            -H "Authorization: Bearer ${ACCESS_TOKEN}" -H "Content-Length: 0")
+          STATUS=$(echo "$RESP" | python3 -c "import sys,json;print(json.load(sys.stdin).get('status',{}).get('lifeCycleStatus',''))" 2>/dev/null)
+          if [ "$STATUS" = "complete" ] || [ "$STATUS" = "completeStarting" ]; then
+            echo "[SA] YouTube confirms broadcast lifecycle status: ${STATUS} — ended via API."
+          else
+            echo "WARN [SA] API transition call did not confirm 'complete' (got: ${STATUS:-none}). Response:"
+            echo "$RESP" | cut -c1-300
+          fi
 
       # ============================================================
       # STEP 8 — Clean RTMP teardown (force platform offline)
