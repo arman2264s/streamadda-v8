@@ -1665,3 +1665,12 @@ function fmtDuration(ms){
 // "Xm Ys left" — human-friendly ETA label shown in the progress row
 function fmtEtaLabel(ms){
   const t=Math.max(0,Math.floor(ms/1000));
+  const h=Math.floor(t/3600), m=Math.floor((t%3600)/60), s=t%60;
+  if(h>0) return `${h}h ${m}m ${s}s left`;
+  if(m>0) return `${m}m ${s}s left`;
+  return `${s}s left`;
+}
+function timeAgo(iso){ if(!iso)return''; const s=Math.floor((Date.now()-new Date(iso).getTime())/1000); if(s<60)return `${s}s ago`; if(s<3600)return `${Math.floor(s/60)}m ago`; return `${Math.floor(s/3600)}h ago`; }
+</script>
+</body>
+</html>
