@@ -613,78 +613,21 @@ jobs:
       #  TELEMETRY: monitor emits [SA_TELEMETRY] frame/fps/bitrate/speed/time.
       #  HANDSHAKE_OK is emitted only after real packet output is seen.
       # ============================================================
-      - name: "[7/8] Launch adaptive FFmpeg stream"
-        id: ffmpeg_stream
+      # ============================================================
+      # This step exists purely to keep step [7/8]'s run: block under
+      # GitHub Actions' per-step expression-length ceiling (a run: block
+      # that mixes ${{ }} expressions with a lot of literal script text
+      # is capped around 21,000 characters). The Python command-builder
+      # below has zero ${{ }} expressions in it (it reads everything from
+      # os.environ at call time), so splitting it into its own step is
+      # 100% behavior-neutral: it just writes /tmp/build_ffmpeg.py to the
+      # runner's filesystem, which step [7/8] then executes normally —
+      # files written in one step are still there in the next step of
+      # the same job.
+      # ============================================================
+      - name: "[6b/8] Prepare adaptive FFmpeg command builder"
         shell: bash
         run: |
-          set +e
-          set +o pipefail
-
-          RTMP_URL="${{ steps.params.outputs.rtmp_url }}"
-          RTMP_BASE="${{ steps.params.outputs.rtmp_base }}"
-          WIDTH="${{ steps.params.outputs.width }}"
-          HEIGHT="${{ steps.params.outputs.height }}"
-          RATIO="${{ steps.params.outputs.ratio }}"
-          PLATFORM="${{ steps.params.outputs.platform }}"
-          ASSET_MODE="${{ steps.params.outputs.asset_mode }}"
-          AMBIENT_AUDIO="${{ steps.params.outputs.ambient_audio }}"
-          NOISE_PROFILE="${{ steps.params.outputs.noise_profile }}"
-          CUSTOM_AUDIO_ENABLED="${{ steps.assets.outputs.custom_audio_enabled_verified }}"
-          CUSTOM_AUDIO_FILES="${{ steps.assets.outputs.custom_audio_files_verified }}"
-          PHOTO_LIST="${{ steps.assets.outputs.photo_list }}"
-          PHOTO_DUR="${{ steps.timing.outputs.photo_dur }}"
-          VIDEO_DUR_INT="${{ steps.timing.outputs.video_dur_int }}"
-          TOTAL_SECONDS="${{ steps.timing.outputs.total_seconds }}"
-          HAS_AUDIO="${{ steps.timing.outputs.has_audio }}"
-          STOP_AT="${{ steps.params.outputs.stop_at }}"
-          export STOP_AT
-
-          FFMPEG_LOG="/tmp/ffmpeg_stderr.log"
-          PID_FILE="/tmp/ffmpeg_current.pid"
-          DONE_FILE="/tmp/sa_done"; FAIL_FILE="/tmp/sa_fail"
-          rm -f "$PID_FILE" "$DONE_FILE" "$FAIL_FILE"; : > "$FFMPEG_LOG"
-          FFMPEG_EXIT=0
-          ASSET_MODE_UPPER=$(printf '%s' "$ASSET_MODE" | tr '[:lower:]' '[:upper:]')
-          [ "$ASSET_MODE" = "video_only" ] && INITIAL_PHASE="VIDEO" || INITIAL_PHASE="PHOTO"
-
-          # Initialise PIDs for trap (referenced before background starts)
-          MONITOR_PID=""
-          KILLER_PID=""
-
-          # ============================================================
-          # SIGINT / SIGTERM GRACEFUL TERMINATION TRAP
-          # Fixes: clicking "Stop" in the UI cancels the GH Actions run,
-          # which sends SIGTERM to the runner shell. This trap then issues
-          # kill -2 (SIGINT) -> kill -15 (SIGTERM) -> kill -9 to FFmpeg,
-          # allowing it to flush the RTMP GOP boundary cleanly.
-          # ============================================================
-          _sa_graceful_stop() {
-            echo ""
-            echo "[SA] *** STOP SIGNAL RECEIVED — Graceful FFmpeg termination sequence ***"
-            touch "$DONE_FILE"
-            if [ -f "$PID_FILE" ]; then
-              local FFPID; FFPID=$(cat "$PID_FILE" 2>/dev/null)
-              if [ -n "$FFPID" ]; then
-                echo "[SA] Phase 1: Sending SIGINT (kill -2) to FFmpeg PID ${FFPID}..."
-                kill -2 "$FFPID" 2>/dev/null || true
-                sleep 3
-                echo "[SA] Phase 2: Sending SIGTERM (kill -15) to FFmpeg PID ${FFPID}..."
-                kill -15 "$FFPID" 2>/dev/null || true
-                sleep 2
-                echo "[SA] Phase 3: SIGKILL cleanup for PID ${FFPID}..."
-                kill -9 "$FFPID" 2>/dev/null || true
-              fi
-            fi
-            [ -n "$MONITOR_PID" ] && { kill "$MONITOR_PID" 2>/dev/null; wait "$MONITOR_PID" 2>/dev/null || true; }
-            [ -n "$KILLER_PID" ] && { kill "$KILLER_PID" 2>/dev/null; wait "$KILLER_PID" 2>/dev/null || true; }
-            echo "[SA_STATUS:COMPLETE]"
-            echo "[SA] FFmpeg stopped cleanly. RTMP teardown will follow in Step 8."
-            echo "ffmpeg_exit_code=130" >> "$GITHUB_OUTPUT"
-            exit 0
-          }
-          trap '_sa_graceful_stop' SIGINT SIGTERM HUP
-
-          # ---------- Write the Python FFmpeg command builder ----------
           cat > /tmp/build_ffmpeg.py <<'PYEOF'
           import json, os, sys
 
@@ -917,6 +860,80 @@ jobs:
           print(json.dumps(["-hide_banner", "-y"] + inputs +
                 ["-filter_complex", ";".join(fc)] + maps + ENCODE))
           PYEOF
+
+      - name: "[7/8] Launch adaptive FFmpeg stream"
+        id: ffmpeg_stream
+        shell: bash
+        run: |
+          set +e
+          set +o pipefail
+
+          RTMP_URL="${{ steps.params.outputs.rtmp_url }}"
+          RTMP_BASE="${{ steps.params.outputs.rtmp_base }}"
+          WIDTH="${{ steps.params.outputs.width }}"
+          HEIGHT="${{ steps.params.outputs.height }}"
+          RATIO="${{ steps.params.outputs.ratio }}"
+          PLATFORM="${{ steps.params.outputs.platform }}"
+          ASSET_MODE="${{ steps.params.outputs.asset_mode }}"
+          AMBIENT_AUDIO="${{ steps.params.outputs.ambient_audio }}"
+          NOISE_PROFILE="${{ steps.params.outputs.noise_profile }}"
+          CUSTOM_AUDIO_ENABLED="${{ steps.assets.outputs.custom_audio_enabled_verified }}"
+          CUSTOM_AUDIO_FILES="${{ steps.assets.outputs.custom_audio_files_verified }}"
+          PHOTO_LIST="${{ steps.assets.outputs.photo_list }}"
+          PHOTO_DUR="${{ steps.timing.outputs.photo_dur }}"
+          VIDEO_DUR_INT="${{ steps.timing.outputs.video_dur_int }}"
+          TOTAL_SECONDS="${{ steps.timing.outputs.total_seconds }}"
+          HAS_AUDIO="${{ steps.timing.outputs.has_audio }}"
+          STOP_AT="${{ steps.params.outputs.stop_at }}"
+          export STOP_AT
+
+          FFMPEG_LOG="/tmp/ffmpeg_stderr.log"
+          PID_FILE="/tmp/ffmpeg_current.pid"
+          DONE_FILE="/tmp/sa_done"; FAIL_FILE="/tmp/sa_fail"
+          rm -f "$PID_FILE" "$DONE_FILE" "$FAIL_FILE"; : > "$FFMPEG_LOG"
+          FFMPEG_EXIT=0
+          ASSET_MODE_UPPER=$(printf '%s' "$ASSET_MODE" | tr '[:lower:]' '[:upper:]')
+          [ "$ASSET_MODE" = "video_only" ] && INITIAL_PHASE="VIDEO" || INITIAL_PHASE="PHOTO"
+
+          # Initialise PIDs for trap (referenced before background starts)
+          MONITOR_PID=""
+          KILLER_PID=""
+
+          # ============================================================
+          # SIGINT / SIGTERM GRACEFUL TERMINATION TRAP
+          # Fixes: clicking "Stop" in the UI cancels the GH Actions run,
+          # which sends SIGTERM to the runner shell. This trap then issues
+          # kill -2 (SIGINT) -> kill -15 (SIGTERM) -> kill -9 to FFmpeg,
+          # allowing it to flush the RTMP GOP boundary cleanly.
+          # ============================================================
+          _sa_graceful_stop() {
+            echo ""
+            echo "[SA] *** STOP SIGNAL RECEIVED — Graceful FFmpeg termination sequence ***"
+            touch "$DONE_FILE"
+            if [ -f "$PID_FILE" ]; then
+              local FFPID; FFPID=$(cat "$PID_FILE" 2>/dev/null)
+              if [ -n "$FFPID" ]; then
+                echo "[SA] Phase 1: Sending SIGINT (kill -2) to FFmpeg PID ${FFPID}..."
+                kill -2 "$FFPID" 2>/dev/null || true
+                sleep 3
+                echo "[SA] Phase 2: Sending SIGTERM (kill -15) to FFmpeg PID ${FFPID}..."
+                kill -15 "$FFPID" 2>/dev/null || true
+                sleep 2
+                echo "[SA] Phase 3: SIGKILL cleanup for PID ${FFPID}..."
+                kill -9 "$FFPID" 2>/dev/null || true
+              fi
+            fi
+            [ -n "$MONITOR_PID" ] && { kill "$MONITOR_PID" 2>/dev/null; wait "$MONITOR_PID" 2>/dev/null || true; }
+            [ -n "$KILLER_PID" ] && { kill "$KILLER_PID" 2>/dev/null; wait "$KILLER_PID" 2>/dev/null || true; }
+            echo "[SA_STATUS:COMPLETE]"
+            echo "[SA] FFmpeg stopped cleanly. RTMP teardown will follow in Step 8."
+            echo "ffmpeg_exit_code=130" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          trap '_sa_graceful_stop' SIGINT SIGTERM HUP
+
+          # (Python FFmpeg command builder is written by step [6b/8] above)
+
 
           export WIDTH HEIGHT ASSET_MODE AMBIENT_AUDIO NOISE_PROFILE CUSTOM_AUDIO_ENABLED CUSTOM_AUDIO_FILES HAS_AUDIO PHOTO_LIST PHOTO_DUR VIDEO_DUR_INT TOTAL_SECONDS RTMP_URL
 
