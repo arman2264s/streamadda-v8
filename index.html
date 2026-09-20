@@ -152,31 +152,6 @@ main{max-width:1180px;margin:0 auto;padding:1.5rem 1.25rem 4rem}
 .stop-panel .sp-text svg{width:14px;height:14px}
 .stop-panel .sp-cnt{font-size:18px;font-weight:800;color:var(--warn-text);min-width:28px;text-align:center;font-family:'JetBrains Mono',monospace}
 
-/* ---- Engine log window (light) ---- */
-.logwrap{margin-top:.85rem;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;background:var(--surface2)}
-.logwrap-head{display:flex;align-items:center;justify-content:space-between;padding:.4rem .6rem;background:var(--surface3);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--text-sec)}
-.logwrap-head .lh{display:inline-flex;align-items:center;gap:.35rem}
-.logwrap-head .lh svg{width:12px;height:12px}
-.log{font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.5;color:var(--text-sec);padding:.6rem;max-height:160px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
-.log span{display:block}
-.log .log-ok{color:var(--ok)}
-.log .log-err{color:var(--danger)}
-.log .log-warn{color:var(--warn)}
-.log .log-info{color:var(--primary)}
-.log .log-telem{color:var(--violet)}
-
-/* ---- FFMPEG OUTPUT terminal (dark/black) ---- */
-.logwrap.ffterm{background:#0b0f1a;border-color:#1a2238}
-.ffterm .logwrap-head{background:#111827;border-bottom-color:#1a2238;color:#94a3b8}
-.ffterm .logwrap-head .lh{color:#67e8f9}
-.ffterm .ffraw{background:#0b0f1a;color:#94a3b8;max-height:220px;font-size:11.5px;line-height:1.6;padding:.7rem .8rem}
-.ffterm .ffraw .fr-telem{color:#22d3ee;font-weight:600}
-.ffterm .ffraw .fr-meta{color:#6ee7b7}
-.ffterm .ffraw .fr-err{color:#f87171}
-.ffterm .ffraw .fr-warn{color:#fbbf24}
-.ffterm .ffraw .fr-enc{color:#a78bfa}
-.ffterm .ffraw .fr-mux{color:#fb923c}
-
 /* ---- Empty state ---- */
 .empty{text-align:center;padding:4rem 1rem;color:var(--muted)}
 .empty .ei{width:60px;height:60px;border-radius:16px;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;margin:0 auto 1rem}
@@ -263,20 +238,6 @@ dialog::backdrop{background:rgba(15,23,42,.45);backdrop-filter:blur(3px)}
 .callout{display:flex;gap:.55rem;background:var(--sky-bg);border:1px solid var(--sky-bd);border-radius:var(--radius-sm);padding:.65rem .8rem;font-size:12px;color:var(--text-sec);margin-bottom:.85rem}
 .callout svg{width:15px;height:15px;color:var(--sky);flex-shrink:0;margin-top:1px}
 
-/* ---- Noise profile picker grid ---- */
-.noise-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:.5rem;margin-top:.65rem}
-.noise-card{display:flex;align-items:center;gap:.55rem;border:1.5px solid var(--border-md);border-radius:var(--radius-sm);background:#fff;padding:.55rem .6rem;cursor:pointer;transition:all var(--tr)}
-.noise-card:hover{background:var(--surface3)}
-.noise-card.on{border-color:var(--primary);background:var(--primary-bg)}
-.noise-card .ni{width:30px;height:30px;border-radius:8px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);flex-shrink:0}
-.noise-card.on .ni{background:var(--primary);color:#fff;border-color:var(--primary)}
-.noise-card .nt{flex:1;min-width:0}
-.noise-card .nn{font-size:12px;font-weight:700;color:var(--text)}
-.noise-card .nd{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.noise-card .np{width:26px;height:26px;border-radius:50%;border:1.5px solid var(--border-md);background:#fff;display:flex;align-items:center;justify-content:center;color:var(--primary);flex-shrink:0;cursor:pointer}
-.noise-card .np:hover{background:var(--primary-bg);border-color:var(--primary)}
-.noise-card .np.playing{background:var(--primary);color:#fff;border-color:var(--primary);animation:pulse 1.1s infinite}
-.noise-card .np svg{width:13px;height:13px}
 
 /* ---- Custom audio track chips ---- */
 .audio-chips{display:flex;flex-direction:column;gap:.35rem;margin-top:.6rem}
@@ -305,16 +266,20 @@ dialog::backdrop{background:rgba(15,23,42,.45);backdrop-filter:blur(3px)}
 .picker-item .psz{font-size:10.5px;color:var(--muted)}
 .picker-empty{text-align:center;padding:1.5rem;color:var(--muted);font-size:12px}
 
-/* ---- Error/warning live card (dedicated SSE-style feed) ---- */
-.logwrap.errterm{background:#1a0e10;border-color:#3a1620}
-.errterm .logwrap-head{background:#241014;border-bottom-color:#3a1620;color:#fca5a5}
-.errterm .logwrap-head .lh{color:#f87171}
-.errterm .errlog{background:#1a0e10;color:#fca5a5;max-height:140px;font-size:11.5px;line-height:1.6;padding:.7rem .8rem}
-.errterm .errlog .el-warn{color:#fbbf24}
-.errterm .errlog .el-err{color:#f87171;font-weight:600}
 .live-dot-sm{display:inline-block;width:6px;height:6px;border-radius:50%;background:#22c55e;margin-right:.3rem;animation:pulse 1.4s infinite}
 
-@media(max-width:520px){.row2{grid-template-columns:1fr}.telemetry{grid-template-columns:1fr 1fr}.noise-grid{grid-template-columns:1fr}}
+/* ---- Unified "Live SSE Logs" card: ONE bordered terminal, one feed ---- */
+.engine-card{margin-top:.5rem;background:#12161f;border:1px solid #232a38;border-radius:var(--radius-sm);overflow:hidden}
+.engine-head-row{display:flex;align-items:center;justify-content:space-between;padding:.5rem .7rem;background:#171c27;border-bottom:1px solid #232a38}
+.engine-head-row .eh{font-size:11px;font-weight:700;color:#cbd5e1;display:flex;align-items:center;gap:.3rem}
+.engine-body{max-height:220px;overflow-y:auto;font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:1.65;padding:.7rem .8rem;color:#cbd5e1}
+.engine-body span{display:block}
+.engine-body .log-err{color:#f87171}
+.engine-body .log-ok{color:#4ade80}
+.engine-body .log-warn{color:#fbbf24}
+.engine-empty{color:#4a5568}
+
+@media(max-width:520px){.row2{grid-template-columns:1fr}.telemetry{grid-template-columns:1fr 1fr}}
 </style>
 </head>
 <body>
@@ -502,19 +467,12 @@ dialog::backdrop{background:rgba(15,23,42,.45);backdrop-filter:blur(3px)}
       <div class="hint" style="margin-top:.5rem">ASMR mixes a continuous low-pass engine rumble (anoisesrc brown) with street air (anoisesrc pink) and gated distant horns (aevalsrc LFO), generated natively in FFmpeg via amix filtergraph.</div>
     </div>
 
-    <!-- Noise filter profile picker — many filters, preview in UI before selecting -->
-    <div class="ctrl-card" id="noise-picker-card">
-      <div class="ctrl-head"><span class="ci"><i data-lucide="sliders"></i></span><span class="ct">Ambient noise filter</span><span class="cs on" id="noise-status"><span class="dot"></span> <span id="noise-status-label">Road / street ASMR</span></span></div>
-      <div class="hint">Tap the small play icon to preview a filter in your browser before selecting it. Tap the card itself to select. This only applies while "Natural road / street ASMR" above is on — otherwise an inaudible quiet floor is used.</div>
-      <div class="noise-grid" id="noise-grid"></div>
-    </div>
-
     <!-- Custom audio — upload from gallery, on/off, single or multi-file, loops -->
     <div class="ctrl-card" id="custom-audio-card">
       <div class="ctrl-head"><span class="ci"><i data-lucide="music-4"></i></span><span class="ct">Custom audio track</span><span class="cs" id="ca-status"><span class="dot"></span> Off</span></div>
       <div class="toggle-row" onclick="toggleCustomAudio()" tabindex="0">
         <span class="ti"><i data-lucide="disc-3"></i></span>
-        <div><div class="tt">Use my own audio instead of a noise filter</div><div class="td" id="ca-desc">Off — noise filter above is used</div></div>
+        <div><div class="tt">Use my own audio instead of ASMR</div><div class="td" id="ca-desc">Off — ASMR toggle above is used</div></div>
         <div class="switch" id="ca-switch"></div>
       </div>
       <div id="ca-fields" style="display:none;margin-top:.75rem">
@@ -636,46 +594,26 @@ const LS_STREAMS='sa_streams_ultimate';
 const LS_FORM='sa_form_ultimate';
 const MAX_DURATION_MIN=345;
 const MAX_UPLOAD_BYTES=200*1024*1024;   // 200 MB collective cap
-const POLL_MS=8000, POLL_MS_MAX=60000, POLL_BACKOFF=1.6, FIND_RUN_RETRIES=20;
+const POLL_MS=8000, POLL_MS_MAX=60000, POLL_BACKOFF=1.6, FIND_RUN_RETRIES=90, FIND_RUN_NET_RETRIES=60;
 const IMG_EXT=['jpg','jpeg','png','webp','gif','bmp'];
 const VID_EXT=['mp4','mov','webm','mkv','m4v'];
 const AUD_EXT=['mp3','wav','m4a','aac','ogg','flac','opus'];
 const ASSET_EXT=[...IMG_EXT,...VID_EXT,...AUD_EXT];
 
-/* Noise/ambience filter catalogue — MUST mirror the profile keys built
-   server-side in run_stream.yml (NOISE_PROFILES dict). Preview is an
-   in-browser Web Audio approximation so users can audition before
-   picking; the actual broadcast audio is generated natively by FFmpeg. */
-const NOISE_PROFILES=[
-  {key:'quiet',label:'Quiet floor',desc:'Inaudible white-noise floor (platform-safe)',icon:'volume-x'},
-  {key:'road_asmr',label:'Road / street ASMR',desc:'Engine rumble + street air + distant horns',icon:'car'},
-  {key:'rain',label:'Rain',desc:'Steady rainfall with a low rumble bed',icon:'cloud-rain'},
-  {key:'cafe',label:'Café ambience',desc:'Chatter murmur + room tone + cup clinks',icon:'coffee'},
-  {key:'forest',label:'Forest',desc:'Wind through leaves + distant birds',icon:'trees'},
-  {key:'ocean',label:'Ocean waves',desc:'Rolling surf with slow swell',icon:'waves'},
-  {key:'white_noise',label:'White noise',desc:'Flat full-spectrum noise',icon:'radio'},
-  {key:'pink_noise',label:'Pink noise',desc:'Softer, bass-weighted noise',icon:'radio'},
-  {key:'brown_noise',label:'Brown noise',desc:'Deep, rumbling low noise',icon:'radio'},
-  {key:'wind',label:'Wind',desc:'Gusting wind with slow sway',icon:'wind'},
-  {key:'fireplace',label:'Fireplace',desc:'Crackling fire bed with pops',icon:'flame'},
-  {key:'office_hum',label:'Office hum',desc:'Fluorescent/AC hum + room floor',icon:'building-2'},
-];
-
 const S={
   cfg:null, streams:{}, polls:{}, timers:{}, findJobs:{}, _inflight:{},
   platform:'youtube', ratio:'9:16', assetMode:'photo_video', driveMode:false, ambientAudio:false,
-  noiseProfile:'road_asmr', customAudioEnabled:false, customAudioFiles:[],
+  customAudioEnabled:false, customAudioFiles:[],
   editId:null, restartId:null, uploads:[], audioUploads:[],
   repoAssets:{photo:[],video:[],audio:[]}, pickerType:'photo', pickerSel:[], pickerTarget:null,
-  _previewCtx:null, _previewNodes:[], _previewKey:null,
 };
 
 /* ---------------- init ---------------- */
 function icons(){ if(window.lucide) lucide.createIcons(); }
 window.addEventListener('DOMContentLoaded',()=>{
   S.cfg=loadCfg(); S.streams=loadStreams();
-  updateCfgUI(); renderNoiseGrid(); restoreFormDefaults(); renderAll(); initDropzone();
-  renderAudioList(); syncNoiseCardEnabled();
+  updateCfgUI(); restoreFormDefaults(); renderAll(); initDropzone();
+  renderAudioList();
   if(S.cfg) scanRepoAssets();
   Object.keys(S.streams).forEach(id=>{
     const s=S.streams[id];
@@ -962,88 +900,6 @@ function toggleAmbient(){
   S.ambientAudio=!S.ambientAudio;
   document.getElementById('ambient-switch').classList.toggle('on',S.ambientAudio);
   document.getElementById('ambient-desc').textContent=S.ambientAudio?'On — natural road / street ASMR bed':'Off — inaudible white-noise floor (platform-safe)';
-  syncNoiseCardEnabled();
-}
-function syncNoiseCardEnabled(){
-  const card=document.getElementById('noise-picker-card'); if(!card) return;
-  card.style.opacity=S.ambientAudio?'1':'.5';
-  card.style.pointerEvents=S.ambientAudio?'':'none';
-}
-
-/* ---------------- noise profile picker + client-side preview ---------------- */
-function renderNoiseGrid(){
-  const grid=document.getElementById('noise-grid'); if(!grid) return;
-  grid.innerHTML=NOISE_PROFILES.map(p=>`
-    <div class="noise-card ${S.noiseProfile===p.key?'on':''}" id="noise-${p.key}" onclick="selectNoiseProfile('${p.key}')">
-      <span class="ni"><i data-lucide="${p.icon}"></i></span>
-      <div class="nt"><div class="nn">${esc(p.label)}</div><div class="nd">${esc(p.desc)}</div></div>
-      <span class="np" id="np-${p.key}" onclick="event.stopPropagation();previewNoise('${p.key}')" title="Preview"><i data-lucide="play"></i></span>
-    </div>`).join('');
-  icons();
-}
-function selectNoiseProfile(key){
-  S.noiseProfile=key;
-  document.querySelectorAll('.noise-card').forEach(c=>c.classList.remove('on'));
-  const el=document.getElementById(`noise-${key}`); if(el) el.classList.add('on');
-  const st=document.getElementById('noise-status-label');
-  const p=NOISE_PROFILES.find(x=>x.key===key);
-  if(st&&p) st.textContent=p.label;
-}
-/* Web Audio API approximation of each server-side lavfi filtergraph, purely
-   for in-browser preview before dispatching — the real broadcast audio is
-   generated natively inside FFmpeg on the GitHub Actions runner. */
-function stopPreview(){
-  if(S._previewNodes.length) S._previewNodes.forEach(n=>{ try{n.stop&&n.stop();}catch(_){} });
-  S._previewNodes=[];
-  if(S._previewKey){ const b=document.getElementById(`np-${S._previewKey}`); if(b){ b.classList.remove('playing'); b.innerHTML='<i data-lucide="play"></i>'; icons(); } }
-  S._previewKey=null;
-}
-function makeNoiseBuffer(ctx,seconds,gen){
-  const len=Math.floor(ctx.sampleRate*seconds);
-  const buf=ctx.createBuffer(2,len,ctx.sampleRate);
-  for(let ch=0;ch<2;ch++){ const d=buf.getChannelData(ch); for(let i=0;i<len;i++) d[i]=gen(i/ctx.sampleRate,ch); }
-  return buf;
-}
-function previewNoise(key){
-  if(S._previewKey===key){ stopPreview(); return; }
-  stopPreview();
-  try{
-    const ctx=S._previewCtx||(S._previewCtx=new (window.AudioContext||window.webkitAudioContext)());
-    if(ctx.state==='suspended') ctx.resume();
-    const master=ctx.createGain(); master.gain.value=0.5; master.connect(ctx.destination);
-    let prevRand=0;
-    const white=()=>Math.random()*2-1;
-    const brown=(state)=>{ const v=(state.v=(state.v||0)*0.98+white()*0.06); return Math.max(-1,Math.min(1,v*3.2)); };
-    const pink=(state)=>{ // simple Paul Kellet pink noise approximation
-      state.b0=state.b0||0;state.b1=state.b1||0;state.b2=state.b2||0;
-      const w=white(); state.b0=0.99765*state.b0+w*0.0990460; state.b1=0.96300*state.b1+w*0.2965164; state.b2=0.57000*state.b2+w*1.0526913;
-      return (state.b0+state.b1+state.b2+w*0.1848)*0.11;
-    };
-    const st={}; const dur=4;
-    let gen;
-    switch(key){
-      case 'quiet': gen=()=>white()*0.01; break;
-      case 'road_asmr': gen=(t)=>brown(st)*0.5+pink(st)*0.15+ (Math.sin(2*Math.PI*277*t)*0.05*Math.max(0,Math.sin(2*Math.PI*0.4*t))); break;
-      case 'rain': gen=()=>white()*0.28+brown(st)*0.08; break;
-      case 'cafe': gen=(t)=>pink(st)*0.3+Math.sin(2*Math.PI*440*t)*0.02*Math.max(0,Math.sin(2*Math.PI*1.3*t)); break;
-      case 'forest': gen=(t)=>pink(st)*0.18+Math.sin(2*Math.PI*2600*t)*0.04*Math.max(0,Math.sin(2*Math.PI*0.6*t)); break;
-      case 'ocean': gen=(t)=>white()*0.3*(0.6+0.4*Math.sin(2*Math.PI*0.12*t)); break;
-      case 'white_noise': gen=()=>white()*0.22; break;
-      case 'pink_noise': gen=()=>pink(st)*0.5; break;
-      case 'brown_noise': gen=()=>brown(st)*0.6; break;
-      case 'wind': gen=(t)=>white()*0.22*(0.5+0.5*Math.sin(2*Math.PI*0.08*t)); break;
-      case 'fireplace': gen=(t)=>pink(st)*0.14+((Math.random()<0.004)?(white()*0.9):0); break;
-      case 'office_hum': gen=(t)=>Math.sin(2*Math.PI*60*t)*0.06+Math.sin(2*Math.PI*120*t)*0.02+white()*0.01; break;
-      default: gen=()=>white()*0.05;
-    }
-    const buf=makeNoiseBuffer(ctx,dur,gen);
-    const src=ctx.createBufferSource(); src.buffer=buf; src.loop=true;
-    const lp=ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value= key==='white_noise'?18000:6000;
-    src.connect(lp); lp.connect(master); src.start();
-    S._previewNodes=[src]; S._previewKey=key;
-    const btn=document.getElementById(`np-${key}`); if(btn){ btn.classList.add('playing'); btn.innerHTML='<i data-lucide="square"></i>'; icons(); }
-    setTimeout(()=>{ if(S._previewKey===key) stopPreview(); },6000);
-  }catch(err){ toast('Preview unavailable in this browser','warn'); }
 }
 
 /* ---------------- custom audio (gallery upload, on/off, loops) ---------------- */
@@ -1131,7 +987,7 @@ function saveFormToStorage(){
     photoDriveUrl:document.getElementById('f-photo-drive-url').value,videoDriveUrl:document.getElementById('f-video-drive-url').value,
     dur:document.getElementById('f-dur').value,ytvid:document.getElementById('f-ytvid').value,
     platform:S.platform,ratio:S.ratio,assetMode:S.assetMode,driveMode:S.driveMode,ambientAudio:S.ambientAudio,
-    noiseProfile:S.noiseProfile,customAudioEnabled:S.customAudioEnabled,customAudioFiles:S.customAudioFiles};
+    customAudioEnabled:S.customAudioEnabled,customAudioFiles:S.customAudioFiles};
   localStorage.setItem(LS_FORM,JSON.stringify(data));
 }
 function restoreFormDefaults(){
@@ -1144,7 +1000,6 @@ function restoreFormDefaults(){
     setVal('f-dur',d.dur||'60'); setVal('f-ytvid',d.ytvid);
     setPlatform(d.platform||'youtube'); setRatio(d.ratio||'9:16'); setMode(d.assetMode||'photo_video');
     if(d.driveMode) toggleDriveMode(); if(d.ambientAudio) toggleAmbient();
-    selectNoiseProfile(d.noiseProfile||'road_asmr');
     S.customAudioFiles=Array.isArray(d.customAudioFiles)?d.customAudioFiles:[];
     if(d.customAudioEnabled) toggleCustomAudio();
   }catch(_){ setMode('photo_video'); }
@@ -1175,7 +1030,7 @@ function buildConfigBundle(s){
     stream_key:s.streamKey||'', total_minutes:String(s.durationMin||60), ratio:s.ratio, platform:s.platform,
     asset_mode:s.assetMode, drive_mode:String(!!s.driveMode), photo_filename:s.photoFilename||'live_photo.jpg',
     video_filename:s.videoFilename||'live_video.mp4', photo_drive_url:s.photoDriveUrl||'', video_drive_url:s.videoDriveUrl||'',
-    ambient_audio:String(!!s.ambientAudio), noise_profile:s.noiseProfile||'road_asmr',
+    ambient_audio:String(!!s.ambientAudio), noise_profile:(s.ambientAudio?'road_asmr':'quiet'),
     custom_audio_enabled:String(!!s.customAudioEnabled), custom_audio_files:(s.customAudioFiles||[]).join(','),
     stream_name:s.name, backup_rtmp:s.backupRtmp||'',
     youtube_video_id:s.ytVideoId||'', start_at:s.startAt||'', stop_at:s.stopAt||'',
@@ -1212,7 +1067,7 @@ async function submitStream(event){
   if(S.customAudioEnabled&&!S.customAudioFiles.length){ toast('Custom audio is on but no track is selected','err'); return; }
   const payload=buildConfigBundle({streamKey:key,durationMin:dur,ratio:S.ratio,platform:S.platform,assetMode:S.assetMode,
     driveMode:S.driveMode,photoFilename,videoFilename,photoDriveUrl,videoDriveUrl,ambientAudio:S.ambientAudio,
-    noiseProfile:S.noiseProfile,customAudioEnabled:S.customAudioEnabled,customAudioFiles:S.customAudioFiles,
+    customAudioEnabled:S.customAudioEnabled,customAudioFiles:S.customAudioFiles,
     name,backupRtmp:backup,ytVideoId,startAt,stopAt});
   saveFormToStorage();
 
@@ -1223,20 +1078,21 @@ async function submitStream(event){
   catch(err){
     const failId=genId();
     S.streams[failId]={id:failId,name,platform:S.platform,ratio:S.ratio,assetMode:S.assetMode,driveMode:S.driveMode,
-      ambientAudio:S.ambientAudio,noiseProfile:S.noiseProfile,customAudioEnabled:S.customAudioEnabled,customAudioFiles:[...S.customAudioFiles],
+      ambientAudio:S.ambientAudio,customAudioEnabled:S.customAudioEnabled,customAudioFiles:[...S.customAudioFiles],
       durationMin:dur,startAt,stopAt,ytVideoId,dispatchedAt,startedAt:null,runId:null,runUrl:null,jobId:null,
-      status:'failed',phase:'failed',frameCount:0,telemetry:null,failReason:err.message,rawFfmpegLines:[],errLines:[],
-      logLines:[`[${ts()}] Dispatch to GitHub Actions FAILED`,`[${ts()}] Reason: ${err.message}`],lastPollAt:null,pollFailCount:0,
+      status:'failed',phase:'failed',frameCount:0,telemetry:null,failReason:err.message,
+      sseLog:[{type:'err',text:`[${ts()}] Dispatch to GitHub Actions FAILED`},{type:'err',text:`[${ts()}] Reason: ${err.message}`}],
+      rawSeenCount:0,errSeenCount:0,lastPollAt:null,pollFailCount:0,
       stopPending:false,stopCountdown:0};
     persistStreams(); renderAll(); toast(`Dispatch failed: ${err.message}`,'err');
     btn.disabled=false; lbl.textContent='Start stream'; return false;
   }
   const id=genId();
   S.streams[id]={id,name,platform:S.platform,ratio:S.ratio,assetMode:S.assetMode,driveMode:S.driveMode,ambientAudio:S.ambientAudio,
-    noiseProfile:S.noiseProfile,customAudioEnabled:S.customAudioEnabled,customAudioFiles:[...S.customAudioFiles],
+    customAudioEnabled:S.customAudioEnabled,customAudioFiles:[...S.customAudioFiles],
     streamKey:key,backupRtmp:backup,photoFilename,videoFilename,photoDriveUrl,videoDriveUrl,durationMin:dur,startAt,stopAt,ytVideoId,
     dispatchedAt,startedAt:null,runId:null,runUrl:null,jobId:null,status:startAt?'scheduled':'starting',phase:'connecting',
-    frameCount:0,telemetry:null,rawFfmpegLines:[],errLines:[],logLines:[`[${ts()}] Stream dispatched to GitHub Actions`],
+    frameCount:0,telemetry:null,sseLog:[{type:'sys',text:`[${ts()}] Stream dispatched to GitHub Actions`}],rawSeenCount:0,errSeenCount:0,
     lastPollAt:null,pollFailCount:0,stopPending:false,stopCountdown:0};
   persistStreams();
   document.getElementById('dlg').close();
@@ -1249,10 +1105,10 @@ async function submitStream(event){
 /* ---------------- run finder ---------------- */
 async function findLatestRun(after){
   const {owner,repo}=S.cfg;
-  const res=await ghFetch(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs?event=repository_dispatch&per_page=15`);
+  const res=await ghFetch(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs?event=repository_dispatch&per_page=30`);
   if(!res.ok) throw new Error(`runs query ${res.status}`);
   const data=await res.json();
-  const cutoff=new Date(after).getTime()-15000;
+  const cutoff=new Date(after).getTime()-20000;
   return (data.workflow_runs||[]).find(r=>new Date(r.created_at).getTime()>=cutoff)||null;
 }
 async function getRunStatus(runId){ const {owner,repo}=S.cfg; const r=await ghFetch(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${runId}`); if(!r.ok)throw new Error(`run ${r.status}`); return r.json(); }
@@ -1261,20 +1117,45 @@ async function getJobLogText(jobId){ const {owner,repo}=S.cfg; const r=await ghF
 
 function startFindRun(id,dispatchedAt){
   if(S.findJobs[id]) clearInterval(S.findJobs[id]);
-  let attempts=0;
+  let attempts=0, netFails=0;
+  const s0=S.streams[id]; if(s0){ s0.findRunGaveUp=false; }
   const iv=setInterval(async()=>{
+    const s=S.streams[id]; if(!s){ clearInterval(iv); return; }
+    if(s.runId){ clearInterval(iv); return; } // already found via another path (e.g. manual retry)
     attempts++;
-    if(attempts>FIND_RUN_RETRIES){ clearInterval(iv); addLog(id,'Could not find GitHub Actions run — check the Actions tab.'); return; }
     try{
       const run=await findLatestRun(dispatchedAt);
+      netFails=0;
       if(run){
-        clearInterval(iv);
-        S.streams[id].runId=run.id; S.streams[id].runUrl=run.html_url; persistStreams();
+        clearInterval(iv); delete S.findJobs[id];
+        s.runId=run.id; s.runUrl=run.html_url; persistStreams();
         addLog(id,`Found run #${run.id}`); renderCard(id); startPoll(id);
-      }else addLog(id,`Waiting for run… (${attempts}/${FIND_RUN_RETRIES})`);
-    }catch(err){ addLog(id,`Run-finder: ${err.message}`); }
+        return;
+      }
+      addLog(id,`Waiting for run… (${attempts}/${FIND_RUN_RETRIES})`);
+    }catch(err){
+      netFails++;
+      const isNetErr=/failed to fetch|network|load failed/i.test(err.message||'');
+      if(isNetErr) addLog(id,`Connection hiccup — retrying… (${netFails}/${FIND_RUN_NET_RETRIES})`);
+      else addLog(id,`Run-finder: ${err.message}`);
+    }
+    // Always re-render so "dispatched Xs ago" and the connecting indicator visibly
+    // stay alive instead of looking frozen while we keep searching in the background.
+    renderCard(id);
+    if(attempts>FIND_RUN_RETRIES||netFails>FIND_RUN_NET_RETRIES){
+      clearInterval(iv); delete S.findJobs[id];
+      const cur=S.streams[id]; if(!cur) return;
+      cur.findRunGaveUp=true; persistStreams();
+      addLog(id,'Paused searching — tap "Retry search" or check the Actions tab manually. The run may still be live on GitHub even if not found here.');
+      renderCard(id);
+    }
   },POLL_MS);
   S.findJobs[id]=iv;
+}
+function retryFindRun(id){
+  const s=S.streams[id]; if(!s) return;
+  s.findRunGaveUp=false; addLog(id,'Retrying run search…'); renderCard(id);
+  startFindRun(id,s.dispatchedAt);
 }
 
 /* ---------------- smart poller ---------------- */
@@ -1331,46 +1212,43 @@ async function pollStep(id){
   parseTelemetry(id,logText);
   parseFfmpegRawLines(id,logText);
   parseErrorLines(id,logText);
-  const lines=logText.split('\n').map(l=>l.replace(/\r/g,''));
-  const recent=lines.filter(l=>l.includes('[SA]')||l.includes('[SA_STATUS')||l.includes('[SA_TELEMETRY]')).slice(-10);
-  if(recent.length){
-    s.logLines=[...(s.logLines||[]).slice(0,3),...recent.map(cleanLogLine)];
-  }
 }
-function cleanLogLine(l){ return l.replace(/^[0-9T:.\-]+Z?\s+/,'').trim(); }
 
 /* ============================================================
-   parseFfmpegRawLines — extract [SA_FFMPEG_RAW] lines from job log
-   These are the raw, unfiltered FFmpeg stderr lines emitted by the
-   workflow's named-pipe reader with a [SA_FFMPEG_RAW] prefix.
-   They include: encoder metadata, stream info, muxer lines,
-   and live telemetry: frame= fps= q= size= time= bitrate= speed=
+   ONE unified "Live SSE Logs" feed per stream (s.sseLog).
+   System events (addLog), raw [SA_FFMPEG_RAW] FFmpeg stderr, and
+   classified errors/warnings all land here, in discovery order —
+   a single chronological terminal instead of three separate boxes.
+   Each poll re-fetches the FULL job log from GitHub, so raw/error
+   parsing tracks how many lines were already recorded (seenCount)
+   and appends only the newly-appeared tail each time.
    ============================================================ */
+function pushSSE(id,type,text){
+  const s=S.streams[id]; if(!s) return;
+  s.sseLog=s.sseLog||[];
+  s.sseLog.push({type,text});
+  if(s.sseLog.length>400) s.sseLog=s.sseLog.slice(-400);
+}
+
 function parseFfmpegRawLines(id, logText){
   const s=S.streams[id]; if(!s) return;
-  // Extract all [SA_FFMPEG_RAW] lines, strip GH Actions timestamp prefix and the tag itself
   const rawLines=logText.split('\n')
     .filter(l=>l.includes('[SA_FFMPEG_RAW]'))
     .map(l=>{
-      // Remove GH Actions log timestamp: "2026-01-01T00:00:00.000Z " prefix
       let stripped=l.replace(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s+/,'').trim();
-      // Remove the [SA_FFMPEG_RAW] tag itself
       stripped=stripped.replace('[SA_FFMPEG_RAW] ','').replace('[SA_FFMPEG_RAW]','').trim();
       return stripped;
     })
     .filter(Boolean);
-  if(rawLines.length){
-    // Keep last 500 raw lines — the "100% full" live tail card intentionally
-    // keeps a much bigger scrollback than the compact telemetry/engine cards.
-    s.rawFfmpegLines=rawLines.slice(-500);
+  const seen=s.rawSeenCount||0;
+  if(rawLines.length>seen){
+    for(const l of rawLines.slice(seen)) pushSSE(id,'raw',l);
+    s.rawSeenCount=rawLines.length;
   }
 }
 
-/* Dedicated error/warning feed — a SEPARATE live card from the raw FFmpeg
-   tail above. Scans the ENTIRE job log (not just [SA_FFMPEG_RAW]-tagged
-   lines) so GitHub Actions step failures, ##[error]/##[warning] annotations,
-   RTMP/handshake failures and raw FFmpeg stderr error text all surface here
-   too — every failure, in one place, per stream. */
+/* Classifies GH step annotations, [SA_STATUS:FAILED] markers, and raw FFmpeg
+   stderr text into error/warning severity — same feed, colour-coded. */
 const ERR_PATTERNS=/error|failed|failure|refused|timed? ?out|denied|fatal|cannot|unable to|invalid|exception|traceback|broken pipe|connection reset|no route to host/i;
 const WARN_PATTERNS=/warn|deprecat|retry|non-monotonic|discontinuity|dropped|late frame|buffer(?:ing)? underrun/i;
 function parseErrorLines(id, logText){
@@ -1383,6 +1261,7 @@ function parseErrorLines(id, logText){
     if(/^##\[error\]/i.test(l)){ level='err'; l=l.replace(/^##\[error\]/i,'').trim(); }
     else if(/^##\[warning\]/i.test(l)){ level='warn'; l=l.replace(/^##\[warning\]/i,'').trim(); }
     else if(l.includes('[SA_STATUS:FAILED')){ level='err'; }
+    else if(l.includes('[SA_STATUS:STALL_DETECTED')){ level='warn'; l='Frame counter stalled — auto-reconnecting…'; }
     else if(l.includes('[SA_FFMPEG_RAW]')){
       const body=l.replace('[SA_FFMPEG_RAW] ','').replace('[SA_FFMPEG_RAW]','').trim();
       if(ERR_PATTERNS.test(body)) level='err';
@@ -1393,7 +1272,11 @@ function parseErrorLines(id, logText){
     else if(ERR_PATTERNS.test(l)&&l.includes('[SA]')) level='err';
     if(level) out.push({level,text:l.slice(0,300)});
   }
-  if(out.length) s.errLines=out.slice(-150);
+  const seen=s.errSeenCount||0;
+  if(out.length>seen){
+    for(const e of out.slice(seen)) pushSSE(id,e.level,e.text);
+    s.errSeenCount=out.length;
+  }
 }
 
 function parseStatusMarkers(id,logText){
@@ -1411,6 +1294,13 @@ function parseStatusMarkers(id,logText){
   if(logText.includes('[SA_STATUS:PHASE:PHOTO]')&&s.status==='online'&&s.phase==='connecting') s.phase='photo';
   if(logText.includes('[SA_STATUS:WATCHDOG_TIMEOUT]')&&s.status==='online'){ s.status='finished'; s.phase='done'; stopTimer(id); addLog(id,'Ended by watchdog (duration reached)'); }
   if(logText.includes('[SA_STATUS:COMPLETE]')&&!['failed','finished'].includes(s.status)){ s.status='finished'; s.phase='done'; stopTimer(id); addLog(id,'Stream completed successfully'); }
+  // Reconnect resilience: YouTube/network dropped the socket (or it stalled
+  // silently) — the backend auto-restarts FFmpeg on its own. Surface this
+  // as a distinct "Reconnecting" indicator instead of quietly staying LIVE.
+  if((logText.includes('[SA_STATUS:RECONNECTING]')||logText.includes('[SA_STATUS:STALL_DETECTED]'))&&s.status==='online'&&!s.reconnecting){
+    s.reconnecting=true; addLog(id,'Connection dropped — auto-reconnecting (stream is not lost)…'); toast(`${s.name}: reconnecting…`,'warn');
+  }
+  if(logText.includes('[SA_STATUS:HANDSHAKE_OK]')&&s.reconnecting){ s.reconnecting=false; addLog(id,'Reconnected — back live.'); toast(`${s.name}: reconnected`,'ok'); }
 }
 
 /* Parse the LAST [SA_TELEMETRY] line for live pipeline metrics */
@@ -1550,7 +1440,7 @@ async function confirmRestart(event){
   const id=S.restartId; const s=S.streams[id]; if(!s){ document.getElementById('dlg-restart').close(); return; }
   let mins=Math.max(2,Math.min(MAX_DURATION_MIN,parseInt(document.getElementById('r-min').value,10)||60));
   s.durationMin=mins; s.startAt='';
-  s.stopPending=false; s.stopCountdown=0; s.rawFfmpegLines=[]; s.errLines=[];
+  s.stopPending=false; s.stopCountdown=0; s.sseLog=[]; s.rawSeenCount=0; s.errSeenCount=0;
   persistStreams(); document.getElementById('dlg-restart').close();
   toast(`Restarting ${s.name} for ${mins} min…`,'inf');
   try{ await dispatchForExistingStream(id); }
@@ -1563,8 +1453,8 @@ async function dispatchForExistingStream(id){
   if(s.runId){ addLog(id,`Cancelling run #${s.runId}…`); const ok=await cancelRun(s.runId); addLog(id,ok?'Cancel accepted.':'Cancel skipped (already finished).'); }
   stopPoll(id); if(S.findJobs[id]){ clearInterval(S.findJobs[id]); S.findJobs[id]=null; } stopTimer(id);
   const dispatchedAt=new Date().toISOString();
-  Object.assign(s,{runId:null,runUrl:null,jobId:null,startedAt:null,frameCount:0,telemetry:null,pollFailCount:0,dispatchedAt,
-    status:s.startAt?'scheduled':'starting',phase:'connecting',rawFfmpegLines:[],errLines:[],stopPending:false,stopCountdown:0});
+  Object.assign(s,{runId:null,runUrl:null,jobId:null,startedAt:null,frameCount:0,telemetry:null,pollFailCount:0,dispatchedAt,reconnecting:false,
+    status:s.startAt?'scheduled':'starting',phase:'connecting',sseLog:s.sseLog||[],rawSeenCount:0,errSeenCount:0,stopPending:false,stopCountdown:0});
   addLog(id,`Re-dispatching (${s.durationMin} min)…`); persistStreams(); renderCard(id);
   await dispatchWorkflow(buildConfigBundle(s));
   addLog(id,'Re-dispatched — locating new run…');
@@ -1623,43 +1513,15 @@ function buildCard(id){
     video_only:'<span class="chip chip-video"><i data-lucide="film"></i>Video</span>',
     photo_video:'<span class="chip chip-both"><i data-lucide="layers"></i>Seq.</span>'
   };
-  const driveChip=s.driveMode?'<span class="chip chip-drive"><i data-lucide="cloud"></i>Drive</span>':'';
-  const ambChip=s.ambientAudio?'<span class="chip chip-ambient"><i data-lucide="waves"></i>ASMR</span>':'';
-
-  const fillClass=isStopPending?'stopping':s.phase==='video'?'video':(s.status==='starting'||s.status==='scheduled'?'connecting':'photo');
-  const t=s.telemetry||{};
-  const isLive=s.status==='online';
-
-  // Engine log (light background, [SA] tagged lines)
-  const logHtml=(s.logLines||[]).slice(-12).map(l=>{
-    const cls=/FAILED|error|Failed/i.test(l)?'log-err':/LIVE|handshake|completed|success/i.test(l)?'log-ok':/\[SA_TELEMETRY\]/.test(l)?'log-telem':/^WARN|backing off|retry/i.test(l)?'log-warn':/\[SA_STATUS/.test(l)?'log-info':'';
-    return `<span class="${cls}">${esc(l)}</span>`;
-  }).join('');
-
-  // Raw FFmpeg terminal (dark, [SA_FFMPEG_RAW] lines — completely unfiltered)
-  const rawLines=(s.rawFfmpegLines||[]).slice(-40);
-  const rawHtml=rawLines.map(l=>{
-    // Classify line type for syntax colouring:
-    // telemetry line: frame= fps= q= size= time= bitrate= speed=
-    if(/frame=\s*\d/.test(l)) return `<span class="fr-telem">${esc(l)}</span>`;
-    // Encoder/codec metadata (libx264, aac, stream mapping lines)
-    if(/libx264|libfdk|aac|encoder|Encoder|SEI|NAL|profile|level|aspect|SAR|DAR/.test(l)) return `<span class="fr-enc">${esc(l)}</span>`;
-    // Stream / input / output headers
-    if(/Input #|Output #|Stream #|Duration:|Metadata:|from '|  Duration/.test(l)) return `<span class="fr-meta">${esc(l)}</span>`;
-    // Muxer / RTMP / flv output lines
-    if(/flv|rtmp|RTMP|mux|Mux|FLV|Opening|Press/.test(l)) return `<span class="fr-mux">${esc(l)}</span>`;
-    // Error lines
-    if(/error|Error|failed|Failed|refused|timed out/i.test(l)) return `<span class="fr-err">${esc(l)}</span>`;
-    // Warning lines
-    if(/warning|Warning|warn|WARN|deprecated/i.test(l)) return `<span class="fr-warn">${esc(l)}</span>`;
-    // Default
-    return `<span>${esc(l)}</span>`;
-  }).join('');
-
-  // Errors & Warnings — dedicated live feed, separate card from the raw FFmpeg tail
-  const errLines=(s.errLines||[]).slice(-60);
-  const errHtml=errLines.map(e=>`<span class="${e.level==='err'?'el-err':'el-warn'}">${e.level==='err'?'✕':'⚠'} ${esc(e.text)}</span>`).join('');
-  const errCount=errLines.filter(e=>e.level==='err').length, warnCount=errLines.filter(e=>e.level==='warn').length;
+  // ---- ONE unified "Live SSE Logs" feed — system events, raw FFmpeg stderr,
+  // and classified errors/warnings, all merged in discovery order.
+  const sseEntries=(s.sseLog||[]).slice(-200);
+  const sseHtml=sseEntries.map(e=>{
+    const cls=e.type==='err'?'log-err':e.type==='warn'?'log-warn':/LIVE|handshake|completed|reconnected/i.test(e.text)?'log-ok':'';
+    const prefix=e.type==='err'?'✕ ':e.type==='warn'?'⚠ ':'';
+    return `<span class="${cls}">${prefix}${esc(e.text)}</span>`;
+  }).join('')||'<span class="engine-empty">Waiting for the stream to start…</span>';
+  const errCount=sseEntries.filter(e=>e.type==='err').length, warnCount=sseEntries.filter(e=>e.type==='warn').length;
 
   const runLink=s.runUrl?`<a href="${esc(s.runUrl)}" target="_blank" rel="noopener" style="font-size:11px">View run</a>`:'';
 
@@ -1669,6 +1531,21 @@ function buildCard(id){
     <span class="sp-text"><i data-lucide="timer"></i>YouTube processing window — waiting for broadcast to register as Ended</span>
     <span class="sp-cnt">${s.stopCountdown||0}s</span>
     <button class="btn btn-ok btn-sm" onclick="dismissStream('${id}')"><i data-lucide="check-circle"></i> Dismiss</button>
+  </div>`:'';
+
+  // Shown only if the run-finder exhausted its retries without finding the workflow run —
+  // the job may still be live on GitHub even though this browser tab lost track of it.
+  const findGaveUpHtml=s.findRunGaveUp?`
+  <div class="stop-panel" style="background:var(--amber-bg,#fffbeb);border-color:var(--amber-bd,#fde68a)">
+    <span class="sp-text"><i data-lucide="alert-triangle"></i>Lost track of the GitHub Actions run (network hiccups). It may still be live — check the Actions tab.</span>
+    <button class="btn btn-primary btn-sm" onclick="retryFindRun('${id}')"><i data-lucide="refresh-cw"></i> Retry search</button>
+  </div>`:'';
+
+  // "Reconnecting" banner — the backend auto-restart already kicked in;
+  // this is not a failure, just visibility into what's happening.
+  const reconnectHtml=s.reconnecting?`
+  <div class="stop-panel" style="background:#fff7ed;border-color:#fed7aa">
+    <span class="sp-text"><span class="live-dot-sm" style="background:#f97316"></span>Connection dropped — auto-reconnecting now (your stream is not lost, hard backup is retrying).</span>
   </div>`:'';
 
   el.innerHTML=`
@@ -1688,7 +1565,7 @@ function buildCard(id){
     <div class="phase">
       <div class="phase-row">
         <span class="phase-lbl"><i data-lucide="${s.phase==='video'?'film':isStopPending?'square-x':'image'}"></i>
-          ${isStopPending?'Stopping…':s.phase==='video'?'Video phase':s.phase==='done'?'Completed':s.phase==='failed'?'Failed':(s.status==='starting'?'Connecting…':s.status==='scheduled'?'Scheduled':'Photo phase')}</span>
+          ${isStopPending?'Stopping…':s.reconnecting?'Reconnecting…':s.phase==='video'?'Video phase':s.phase==='done'?'Completed':s.phase==='failed'?'Failed':(s.status==='starting'?'Connecting…':s.status==='scheduled'?'Scheduled':'Photo phase')}</span>
         <span style="display:flex;align-items:center;gap:.5rem">
           ${isLive&&!isStopPending?`<span class="phase-eta">${etaLabel}</span>`:''}
           <span>${pct}%</span>
@@ -1721,44 +1598,18 @@ function buildCard(id){
     </div>
 
     ${stopPanelHtml}
+    ${findGaveUpHtml}
+    ${reconnectHtml}
 
-    <!-- Engine log: light background, [SA] / [SA_STATUS] / [SA_TELEMETRY] tagged lines -->
-    <div class="logwrap" style="margin-top:.75rem">
-      <div class="logwrap-head">
-        <span class="lh"><i data-lucide="terminal"></i> Engine log${t.time?` · t=${esc(t.time)}`:''}</span>
-        <button class="btn btn-ghost btn-xs" onclick="clearLog('${id}')"><i data-lucide="eraser"></i> Clear</button>
-      </div>
-      <div class="log" id="log-${id}">${logHtml}</div>
-    </div>
-
-    <!-- FFMPEG OUTPUT: dark terminal, raw unfiltered FFmpeg stderr lines. Fast-polled
-         (3s) while the stream is online — the closest a browser can get to a true
-         server-push/SSE feed against the GitHub Actions REST log API. -->
-    <div class="logwrap ffterm" style="margin-top:.5rem">
-      <div class="logwrap-head">
-        <span class="lh">${s.status==='online'?'<span class="live-dot-sm"></span>':'<i data-lucide="terminal-square"></i> '}FFMPEG OUTPUT
-          <span style="font-size:10px;font-weight:400;color:#4a5568;margin-left:.4rem">
-            ${rawLines.length?`(${rawLines.length} lines${s.status==='online'?' · live tail':''})`:'waiting for stream…'}
-          </span>
+    <!-- ONE log card: Live SSE Logs — system + raw FFmpeg + errors, merged -->
+    <div class="engine-card">
+      <div class="engine-head-row">
+        <span class="eh">${s.status==='online'?'<span class="live-dot-sm"></span>':'<i data-lucide=\"terminal\"></i> '}Live SSE Logs
+          <span style="color:#4a5568">· ${sseEntries.length} lines${errCount||warnCount?` · ${errCount} error(s), ${warnCount} warning(s)`:''}</span>
         </span>
-        <button class="btn btn-ghost btn-xs" style="color:#94a3b8;border-color:#2d3748" onclick="clearRawLog('${id}')"><i data-lucide="eraser"></i> Clear</button>
+        <button class="btn btn-ghost btn-xs" onclick="clearSSE('${id}')"><i data-lucide="eraser"></i> Clear</button>
       </div>
-      <div class="log ffraw" id="rawlog-${id}">${rawHtml||'<span style="color:#4a5568">No FFmpeg output yet. Output appears once the stream starts encoding.</span>'}</div>
-    </div>
-
-    <!-- ERRORS & WARNINGS: dedicated card, separate from the raw tail above —
-         pulls from the FULL job log (GH step annotations + raw ffmpeg stderr +
-         [SA_STATUS:FAILED] markers), not just [SA_FFMPEG_RAW] lines. -->
-    <div class="logwrap errterm" style="margin-top:.5rem">
-      <div class="logwrap-head">
-        <span class="lh"><i data-lucide="alert-octagon"></i> Errors &amp; Warnings
-          <span style="font-size:10px;font-weight:400;color:#7f5257;margin-left:.4rem">
-            ${errLines.length?`(${errCount} error${errCount===1?'':'s'} · ${warnCount} warning${warnCount===1?'':'s'})`:'clean — none detected'}
-          </span>
-        </span>
-        <button class="btn btn-ghost btn-xs" style="color:#fca5a5;border-color:#3a1620" onclick="clearErrLog('${id}')"><i data-lucide="eraser"></i> Clear</button>
-      </div>
-      <div class="log errlog" id="errlog-${id}">${errHtml||'<span style="color:#7f5257">No errors or warnings detected yet.</span>'}</div>
+      <div class="engine-body" id="sse-${id}">${sseHtml}</div>
     </div>
 
   </div>`;
@@ -1778,16 +1629,22 @@ function statusCardClass(st){ return st==='online'?'is-live':st==='starting'?'is
 /* ---------------- log + clear functions ---------------- */
 function addLog(id,msg){
   const s=S.streams[id]; if(!s) return;
-  s.logLines=s.logLines||[]; s.logLines.push(`[${ts()}] ${msg}`);
-  if(s.logLines.length>80) s.logLines=s.logLines.slice(-80);
-  const logEl=document.getElementById(`log-${id}`);
-  if(logEl){ const line=document.createElement('span'); line.textContent=`[${ts()}] ${msg}`;
-    if(/FAILED|error/i.test(msg))line.className='log-err'; else if(/LIVE|handshake|completed/i.test(msg))line.className='log-ok'; else if(/^WARN|retry|backing/i.test(msg))line.className='log-warn';
+  const text=`[${ts()}] ${msg}`;
+  const type=/FAILED|error/i.test(msg)?'err':/^WARN|retry|backing|dropped|reconnecting/i.test(msg)?'warn':'sys';
+  pushSSE(id,type,text);
+  // Fast-path: append directly to the live DOM terminal (if this card is on
+  // screen right now) so the message shows instantly, ahead of the next
+  // full renderCard() redraw.
+  const logEl=document.getElementById(`sse-${id}`);
+  if(logEl){ const line=document.createElement('span'); line.textContent=text;
+    if(type==='err')line.className='log-err'; else if(/LIVE|handshake|completed|reconnected/i.test(msg))line.className='log-ok'; else if(type==='warn')line.className='log-warn';
     logEl.appendChild(line); logEl.scrollTop=logEl.scrollHeight; }
 }
-function clearLog(id){ if(!S.streams[id])return; S.streams[id].logLines=[]; const l=document.getElementById(`log-${id}`); if(l)l.innerHTML=''; persistStreams(); }
-function clearRawLog(id){ if(!S.streams[id])return; S.streams[id].rawFfmpegLines=[]; const l=document.getElementById(`rawlog-${id}`); if(l)l.innerHTML='<span style="color:#4a5568">Cleared.</span>'; persistStreams(); }
-function clearErrLog(id){ if(!S.streams[id])return; S.streams[id].errLines=[]; const l=document.getElementById(`errlog-${id}`); if(l)l.innerHTML='<span style="color:#7f5257">Cleared.</span>'; persistStreams(); }
+function clearSSE(id){
+  const s=S.streams[id]; if(!s) return;
+  s.sseLog=[]; s.rawSeenCount=0; s.errSeenCount=0;
+  persistStreams(); renderCard(id);
+}
 
 /* ---------------- toast + utils ---------------- */
 function toast(msg,type='inf'){
@@ -1808,12 +1665,3 @@ function fmtDuration(ms){
 // "Xm Ys left" — human-friendly ETA label shown in the progress row
 function fmtEtaLabel(ms){
   const t=Math.max(0,Math.floor(ms/1000));
-  const h=Math.floor(t/3600), m=Math.floor((t%3600)/60), s=t%60;
-  if(h>0) return `${h}h ${m}m ${s}s left`;
-  if(m>0) return `${m}m ${s}s left`;
-  return `${s}s left`;
-}
-function timeAgo(iso){ if(!iso)return''; const s=Math.floor((Date.now()-new Date(iso).getTime())/1000); if(s<60)return `${s}s ago`; if(s<3600)return `${Math.floor(s/60)}m ago`; return `${Math.floor(s/3600)}h ago`; }
-</script>
-</body>
-</html>
